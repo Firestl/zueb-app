@@ -1,3 +1,16 @@
+"""
+HTTP client for the WebHR attendance system (rsxt1.zueb.edu.cn/webhr/).
+
+Authentication flow (called by attendance/service.py):
+  1. Call `get_webhrtoken` with SSO credentials + first RSA signature
+     → returns a short-lived webhrtoken (session bearer token)
+  2. Call `get_kqcard_info` with the webhrtoken + a second RSA signature
+     → returns today's clock-in / clock-out card data
+
+Both requests send the RSA signature in the JSON body (not as a header),
+along with the current Unix timestamp used in the signed payload.
+"""
+
 import json
 
 import httpx
@@ -10,6 +23,12 @@ class WebHRError(Exception):
 
 
 def _parse_json_response(response: httpx.Response, action: str) -> dict:
+    """Raise a descriptive WebHRError on HTTP errors or non-JSON bodies.
+
+    Args:
+        response: The httpx Response to validate.
+        action:   Human-readable endpoint label for error messages.
+    """
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -25,6 +44,16 @@ def _parse_json_response(response: httpx.Response, action: str) -> dict:
 
 
 class WebHRClient:
+    """HTTP client for the WebHR attendance API.
+
+    Manages a persistent httpx session across the two-step auth flow.
+    Use as a context manager to ensure the session is closed:
+
+        with WebHRClient() as client:
+            token = client.get_webhrtoken(...)
+            data  = client.get_kqcard_info(token, ...)
+    """
+
     def __init__(self):
         self._client = httpx.Client(
             headers=DEFAULT_HEADERS,
@@ -39,6 +68,23 @@ class WebHRClient:
         signature: str,
         timestamp: int,
     ) -> str:
+        """Exchange SSO credentials for a WebHR session token.
+
+        POSTs to `appLoginsso` with the SSO credentials and RSA signature.
+        The returned token must be passed to every subsequent API call.
+
+        Args:
+            user_code: WebHR user identifier from the SSO redirect URL.
+            md5str:    Session credential from the SSO redirect URL.
+            signature: Base64 RSA-SHA256 signature of "{md5str}&{user_code}&{timestamp}".
+            timestamp: Unix epoch seconds used in the signature payload.
+
+        Returns:
+            webhrtoken string (short-lived session bearer).
+
+        Raises:
+            WebHRError: If the request fails or token is absent in the response.
+        """
         headers = {
             "Content-Type": "application/json",
             "Accept": "*/*",
@@ -48,6 +94,7 @@ class WebHRClient:
                 f"?userCode={user_code}&md5Str={md5str}"
                 "&targetUrl=App-apply/App-apply-kqcard/index"
             ),
+            # Server expects "null" (string literal) before the token is known.
             "webhrtoken": "null",
         }
         payload = {
@@ -75,11 +122,27 @@ class WebHRClient:
         signature: str,
         timestamp: int,
     ) -> dict:
+        """Fetch today's clock-in / clock-out card information.
+
+        Args:
+            webhrtoken: Session token from `get_webhrtoken`.
+            signature:  Base64 RSA-SHA256 signature (fresh, second call).
+            timestamp:  Unix epoch seconds used in the signature payload.
+
+        Returns:
+            Raw response JSON; the card data is at response["data"]["data"].
+            Fields: sbk (上班卡 clock-in list), xbk (下班卡 clock-out list).
+
+        Raises:
+            WebHRError: If the request fails or the response is not valid JSON.
+        """
         headers = {
             "Content-Type": "application/json",
             "Accept": "*/*",
             "Origin": "https://rsxt1.zueb.edu.cn",
             "Referer": "https://rsxt1.zueb.edu.cn/webhrApp/",
+            # The cookie header is set manually because httpx CookieJar
+            # would not send it to a different path scope automatically.
             "cookie": f"token={webhrtoken}",
         }
 

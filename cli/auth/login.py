@@ -15,7 +15,7 @@ class MFARequiredError(Exception):
 
 
 def login(username: str, password: str) -> dict:
-    """Orchestrate the 4-step login flow (replicates LoginActivity.G() → f()).
+    """Orchestrate the end-to-end login flow (config, RSA, MFA detect, login).
 
     Returns dict with 'id_token' and 'user' keys on success.
     Raises LoginError on failure, MFARequiredError if MFA is needed.

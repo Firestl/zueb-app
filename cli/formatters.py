@@ -4,9 +4,10 @@ import click
 
 
 def print_schedule(data: dict) -> None:
-    """Format and print course schedule."""
+    """Render a /wap/mycourseschedule.action response for terminal output."""
     xn = data.get("xn", "")
     xq = data.get("xq", "")
+    # JWXT payload convention: xq "0"=第一学期, "1"=第二学期.
     xq_name = "第一学期" if xq == "0" else "第二学期"
     zc = data.get("zc", "")
     qssj = data.get("qssj", "")

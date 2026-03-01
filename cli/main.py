@@ -149,7 +149,7 @@ def attendance():
     "--list-semesters", is_flag=True, help="List selectable semesters and exit"
 )
 def schedule(semester_code, year, term, week, list_semesters):
-    """Show current semester course schedule."""
+    """Show course schedule (supports semester/year-term/week selectors)."""
     session = _require_session()
     id_token = session["id_token"]
 

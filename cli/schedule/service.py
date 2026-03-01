@@ -1,4 +1,4 @@
-"""Course schedule service logic."""
+"""Schedule service orchestration (token -> SSO -> JWXT API)."""
 
 import base64
 import json
@@ -12,7 +12,14 @@ class ScheduleError(Exception):
 
 
 def _decode_token_payload(id_token: str) -> dict:
-    """Best-effort JWT payload decode without signature verification."""
+    """Best-effort JWT payload decode without signature verification.
+
+    Args:
+        id_token: Raw JWT string from login flow.
+
+    Returns:
+        Decoded payload dict when parsing succeeds; otherwise an empty dict.
+    """
     parts = id_token.split(".")
     if len(parts) < 2:
         return {}
@@ -31,7 +38,14 @@ def _decode_token_payload(id_token: str) -> dict:
 
 
 def _extract_login_id_from_token(id_token: str) -> str:
-    """Best-effort extraction of user id from JWT payload without verification."""
+    """Best-effort extraction of login id for JWXT fallback identity fields.
+
+    Args:
+        id_token: Raw JWT string from login flow.
+
+    Returns:
+        Login id string (for example, student/staff number), or empty string.
+    """
     payload = _decode_token_payload(id_token)
     if not payload:
         return ""
@@ -40,7 +54,14 @@ def _extract_login_id_from_token(id_token: str) -> str:
 
 
 def _extract_user_type_from_token(id_token: str) -> str:
-    """Best-effort extraction of JWXT user type (TEA/STU/NST) from token payload."""
+    """Best-effort extraction of JWXT user type from token payload.
+
+    Args:
+        id_token: Raw JWT string from login flow.
+
+    Returns:
+        One of `TEA`/`STU`/`NST` when recognized, otherwise empty string.
+    """
     payload = _decode_token_payload(id_token)
     if not payload:
         return ""
@@ -70,7 +91,7 @@ def _extract_user_type_from_token(id_token: str) -> str:
 
 
 def _build_client(id_token: str) -> JWXTClient:
-    """Create authenticated JWXT client from id_token."""
+    """Create an authenticated JWXT client from CAS id_token."""
     try:
         jsessionid = get_jwxt_session(id_token)
     except SSOError as e:
@@ -84,7 +105,17 @@ def _build_client(id_token: str) -> JWXTClient:
 
 
 def get_available_semesters(id_token: str) -> list[dict]:
-    """Get all selectable semesters from JWXT."""
+    """Get selectable semester items from getxnxq_xl.
+
+    Args:
+        id_token: JWT token from login.
+
+    Returns:
+        Raw semester item list (each item is a dict containing at least `dm` and `mc`).
+
+    Raises:
+        ScheduleError: If SSO/JWXT request fails.
+    """
     try:
         with _build_client(id_token) as client:
             return client.get_semester_items()
@@ -102,7 +133,11 @@ def get_schedule(
     week: int | None = None,
 ) -> dict:
     """
-    Get schedule by semester code or by year/term.
+    Fetch schedule with one of:
+    - default current semester/week behavior
+    - explicit semester code
+    - year + term (resolved via getxnxq_xl)
+    - optional explicit week (validated against maxzc)
 
     Args:
         id_token: JWT token from login
@@ -125,19 +160,27 @@ def get_schedule(
             if week is None:
                 return client.get_course_schedule(semester_code=resolved_code)
 
-            baseline = client.get_course_schedule(semester_code=resolved_code)
-            maxzc_raw = baseline.get("maxzc")
+            # Explicit week query is sent once and returned directly.
+            # Some out-of-range week queries return a shell payload without maxzc.
+            data = client.get_course_schedule(
+                semester_code=resolved_code, week=str(week)
+            )
+            maxzc_raw = data.get("maxzc")
             try:
                 maxzc = int(str(maxzc_raw))
             except (TypeError, ValueError):
-                raise ScheduleError("invalid maxzc in schedule response")
+                # Fallback to baseline request to recover maxzc for validation.
+                baseline = client.get_course_schedule(semester_code=resolved_code)
+                baseline_maxzc_raw = baseline.get("maxzc")
+                try:
+                    maxzc = int(str(baseline_maxzc_raw))
+                except (TypeError, ValueError):
+                    raise ScheduleError("invalid maxzc in schedule response")
 
             if week > maxzc:
                 raise ScheduleError(f"week {week} out of range: 1..{maxzc}")
 
-            return client.get_course_schedule(
-                semester_code=resolved_code, week=str(week)
-            )
+            return data
     except ScheduleError:
         raise
     except Exception as e:
@@ -145,25 +188,5 @@ def get_schedule(
 
 
 def get_current_schedule(id_token: str) -> dict:
-    """
-    Get current semester course schedule.
-
-    Args:
-        id_token: JWT token from login
-
-    Returns:
-        dict with schedule data:
-            - xn: 学年 (e.g., "2025")
-            - xq: 学期 (0=第一学期, 1=第二学期)
-            - maxzc: 最大周次
-            - zc: 当前周
-            - qssj: 起始时间
-            - jssj: 结束时间
-            - maxjc: 最大节次
-            - week1-7: 周一到周日的课程列表
-            - sjhjinfo: 实践环节信息
-
-    Raises:
-        ScheduleError: If schedule retrieval fails
-    """
+    """Backward-compatible alias of get_schedule(id_token)."""
     return get_schedule(id_token)

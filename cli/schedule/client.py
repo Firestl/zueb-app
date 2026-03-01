@@ -16,7 +16,7 @@ class JWXTClientError(Exception):
 
 
 class JWXTClient:
-    """HTTP client for JWXT course schedule system."""
+    """JWXT H5 client for jw_apply-based schedule endpoints."""
 
     BASE_URL = JWXT_BASE_URL
     _DEFAULT_ENCRYPT_KEY = "1tkdum1tkcbb"
@@ -30,8 +30,8 @@ class JWXTClient:
 
         Args:
             jsessionid: JSESSIONID cookie value from SSO
-            login_id: Optional fallback user id (2091099 style)
-            user_type: Optional fallback user type (TEA/STU)
+            login_id: Optional fallback user id (student/staff number)
+            user_type: Optional fallback user type (TEA/STU/NST)
         """
         self.jsessionid = jsessionid
         self.login_id = login_id
@@ -65,7 +65,7 @@ class JWXTClient:
         self.close()
 
     def _bootstrap_context(self) -> None:
-        """Load runtime encryption/user context from H5 bootstrap JS."""
+        """Load runtime context (G_ENCRYPT/G_LOGIN_ID/G_USER_TYPE) from H5 JS."""
         # Keep behavior close to app traffic: visit index first, then context JS.
         self._client.get("/h5/index.html")
         resp = self._client.get("/custom/js/SetRootPath4H5.jsp")
@@ -73,8 +73,17 @@ class JWXTClient:
 
         script = resp.text
         self.encrypt_key = self._extract_js_var(script, "G_ENCRYPT") or self.encrypt_key
-        self.login_id = self._extract_js_var(script, "G_LOGIN_ID") or self.login_id
-        self.user_type = self._extract_js_var(script, "G_USER_TYPE") or self.user_type
+        js_login_id = self._extract_js_var(script, "G_LOGIN_ID")
+        # SetRootPath4H5.jsp occasionally returns guest placeholders.
+        # Keep token-derived identity in that case, otherwise schedule data may become empty.
+        if js_login_id and "guest" not in js_login_id.lower():
+            self.login_id = js_login_id
+
+        js_user_type = self._extract_js_var(script, "G_USER_TYPE")
+        # "SPE" is the same placeholder profile seen with guest context.
+        if js_user_type and js_user_type.upper() != "SPE":
+            self.user_type = js_user_type
+
         self.school_code = (
             self._extract_js_var(script, "G_SCHOOL_CODE") or self.school_code
         )
@@ -123,10 +132,19 @@ class JWXTClient:
 
     @staticmethod
     def _get_md5_2(plain: str) -> str:
-        # JS getMd5_2:
+        """Compute JWXT `param2` digest from the plaintext query string.
+
+        Args:
+            plain: Raw query string built by `_build_plain_payload`.
+
+        Returns:
+            Lowercase 32-char hex MD5 string used as `param2`.
+        """
+        # JWXT H5 getMd5_2 (used as param2 for jw_apply):
         #   h1 = md5(plain)
         #   remove chars at 1-index positions 3,10,17,25
         #   return md5(filtered)
+        # Note: param2 is derived only from plain payload (not timestamp/server time).
         h1 = hashlib.md5(plain.encode("utf-8")).hexdigest()
         filtered = "".join(
             ch for i, ch in enumerate(h1, start=1) if i not in {3, 10, 17, 25}
@@ -135,16 +153,46 @@ class JWXTClient:
 
     @classmethod
     def _of_encrypt(cls, plain: str, key: str) -> str:
-        # Port of module 76e3/of_encrypt from H5 bundle.
+        """Encrypt a plaintext string with the JWXT jw_apply cipher.
+
+        Port of module 76e3/of_encrypt from the JWXT H5 JavaScript bundle.
+
+        Algorithm overview:
+          1. Compute a single-byte `offset` = (6 * ceil(N/3)) % len(key),
+             where N is the length of the plaintext.  This ties the offset to
+             the message length and the key length.
+          2. Walk each character of `plain`, pairing it with the corresponding
+             cycling character of `key` (key repeats if plain is longer).
+             Compute: mixed = ord(plain_char) + ord(key_char) + offset
+             Format `mixed` as exactly 3 decimal digits (last 3 if overflow),
+             appending each to a growing `decimal_stream` string.
+          3. Slice `decimal_stream` into 9-digit chunks.
+             Each 9-digit chunk is an integer; convert it to base-36 and
+             zero-pad to 6 characters.  These 6-char groups are concatenated
+             to form the final ciphertext.
+
+        The session-specific `G_ENCRYPT` key (fetched from SetRootPath4H5.jsp)
+        is used in production; the default fallback is "1tkdum1tkcbb".
+
+        Args:
+            plain: Plaintext query string to encrypt.
+            key:   Encryption key (G_ENCRYPT from the JWXT session context).
+
+        Returns:
+            Encrypted string of base-36 6-char groups, or `plain` unchanged
+            if either argument is empty.
+        """
         if not plain or not key:
             return plain
 
         key_len = len(key)
         data_len = len(plain)
         rounds = math.ceil(data_len / key_len)
+        # cipher_len is the total output length (6 chars per 3 input chars).
         cipher_len = 6 * math.ceil(data_len / 3)
         offset = cipher_len % key_len
 
+        # Step 2: build decimal stream by mixing each plaintext char with its key char.
         decimal_stream = ""
         for round_index in range(rounds):
             for key_index in range(1, key_len + 1):
@@ -154,8 +202,10 @@ class JWXTClient:
                 data_ch = plain[pos - 1]
                 key_ch = key[key_index - 1]
                 mixed = ord(data_ch) + ord(key_ch) + offset
+                # Take only the last 3 digits to keep each unit exactly 3 chars.
                 decimal_stream += f"{mixed:03d}"[-3:]
 
+        # Step 3: convert 9-digit chunks to zero-padded 6-char base-36 strings.
         encoded = ""
         cursor = 0
         while cursor < len(decimal_stream):
@@ -169,7 +219,15 @@ class JWXTClient:
         """
         Build plaintext query string exactly like JWXT H5 request interceptor.
 
-        The order matters because `param2` is derived from this raw query string.
+        `param2` is derived from this exact plain string, so key order and raw value
+        formatting must stay stable (no URL-encoding at this stage).
+
+        Args:
+            step: JWXT business step (for example, `xnxq` or `detail`).
+            payload: Endpoint-specific plain fields to append after base fields.
+
+        Returns:
+            Plain `k=v&...` string used to generate both `param` and `param2`.
         """
         data: dict[str, Any] = {
             "action": "jw_apply",
@@ -189,7 +247,7 @@ class JWXTClient:
         if not data.get("usertype"):
             data["usertype"] = self.user_type
 
-        # Config extraParam for kbvueh5.detail in module 3e1a.
+        # detail requests include these keys in app traffic, even when empty.
         if step == self._STEP_DETAIL:
             data.setdefault("bjdm", "")
             data.setdefault("jsdm", "")
@@ -198,6 +256,20 @@ class JWXTClient:
         return "&".join(parts)
 
     def _jw_apply_get(self, endpoint: str, step: str, payload: dict[str, Any]) -> dict:
+        """Send one jw_apply GET request and return decoded JSON payload.
+
+        Args:
+            endpoint: Relative JWXT path (for example, `/wap/mycourseschedule.action`).
+            step: `step` field included in the plaintext payload.
+            payload: Endpoint-specific business payload fields.
+
+        Returns:
+            Response body parsed as JSON dict.
+
+        Raises:
+            httpx.HTTPError: Request failure or non-2xx status code.
+            ValueError: Response body is not valid JSON.
+        """
         plain = self._build_plain_payload(step, payload)
         params = {
             "action": "jw_apply",
@@ -261,10 +333,10 @@ class JWXTClient:
 
     def get_semester_list(self) -> dict:
         """
-        Get available semester list with jw_apply encrypted parameters.
+        Call /wap/getxnxq_xl.action (step=xnxq) with jw_apply signing/encryption.
 
         Returns:
-            Response JSON with semester list
+            Raw response JSON containing semester metadata (including xnxq list).
 
         Raises:
             httpx.HTTPError: If request fails
@@ -275,14 +347,14 @@ class JWXTClient:
         self, semester_code: str | None = None, week: str | None = None
     ) -> dict:
         """
-        Get course schedule for specified semester.
+        Get course schedule for a semester (optionally for a specific week).
 
         Args:
-            semester_code: Semester code (e.g., "20251"), None for current
-            week: Optional explicit week parameter
+            semester_code: Semester code (e.g., "20251"), None means current.
+            week: Explicit week string; None applies deployment-specific default.
 
         Returns:
-            Response JSON with course schedule data
+            Raw mycourseschedule JSON payload.
 
         Raises:
             httpx.HTTPError: If request fails
@@ -306,7 +378,7 @@ class JWXTClient:
         if week is None:
             # Matches packet behavior:
             # - current semester uses empty week
-            # - non-current/future semester commonly uses week=1
+            # - non-current semester often needs week=1 to get stable data
             week = "" if semester_code == current_dm else "1"
 
         payload = {"xnxq": semester_code, "week": week}
