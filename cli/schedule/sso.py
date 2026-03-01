@@ -4,6 +4,10 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from cli.config import CAS_LOGIN_URL, JWXT_BASE_URL
+
+_JWXT_SERVICE_URL = f"{JWXT_BASE_URL}/jxcjcaslogin?url=h5/index.html"
+
 
 class SSOError(Exception):
     """SSO authentication error."""
@@ -27,15 +31,12 @@ def get_jwxt_session(id_token: str) -> str:
     Raises:
         SSOError: If SSO authentication fails
     """
-    cas_url = "https://cas.zueb.edu.cn/cas/login"
-    service_url = "https://jwxt.zueb.edu.cn/jxcjcaslogin?url=h5/index.html"
-
     with httpx.Client(follow_redirects=False, timeout=30.0) as client:
         # Step 1: Request CAS login
         try:
             resp = client.get(
-                cas_url,
-                params={"idToken": id_token, "service": service_url},
+                CAS_LOGIN_URL,
+                params={"idToken": id_token, "service": _JWXT_SERVICE_URL},
             )
         except httpx.RequestError as e:
             raise SSOError(f"CAS login request failed: {e}")

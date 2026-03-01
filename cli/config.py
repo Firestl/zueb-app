@@ -3,6 +3,8 @@ from pathlib import Path
 LOGIN_BASE_URL = "https://cas.zueb.edu.cn/token/"
 PERSONAL_BASE_URL = "https://authx-service.zueb.edu.cn/personal/"
 WEBHR_BASE_URL = "https://rsxt1.zueb.edu.cn/webhr/"
+JWXT_BASE_URL = "https://jwxt.zueb.edu.cn"
+CAS_LOGIN_URL = "https://cas.zueb.edu.cn/cas/login"
 APP_ID = "com.supwisdom.zueb"
 
 DEFAULT_HEADERS = {

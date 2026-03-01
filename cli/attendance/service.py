@@ -1,6 +1,6 @@
 from cli.attendance.client import WebHRClient, WebHRError
 from cli.attendance.sign import SignatureError, generate_signature
-from cli.attendance.sso import SsoError, get_sso_credentials
+from cli.attendance.sso import SSOError, get_sso_credentials
 
 
 class AttendanceError(Exception):
@@ -61,5 +61,5 @@ def get_attendance_status(id_token: str) -> dict:
             "xbk_done": xbk_done,
             "all_done": sbk_done and xbk_done,
         }
-    except (SsoError, WebHRError, SignatureError, KeyError) as exc:
+    except (SSOError, WebHRError, SignatureError, KeyError) as exc:
         raise AttendanceError(str(exc)) from exc

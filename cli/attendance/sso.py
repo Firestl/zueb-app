@@ -7,7 +7,7 @@ from cli.config import DEFAULT_HEADERS, WEBHR_BASE_URL
 _TARGET_URL = "App-apply/App-apply-kqcard/index"
 
 
-class SsoError(Exception):
+class SSOError(Exception):
     pass
 
 
@@ -20,7 +20,7 @@ def _extract_query_value(query_params: dict, key: str) -> str:
 
 def get_sso_credentials(id_token: str) -> dict:
     if not id_token:
-        raise SsoError("id_token is required")
+        raise SSOError("id_token is required")
 
     headers = {
         **DEFAULT_HEADERS,
@@ -38,7 +38,7 @@ def get_sso_credentials(id_token: str) -> dict:
             resp = client.get(WEBHR_BASE_URL + "webhrN2SSOAPP", params=params)
             resp.raise_for_status()
     except httpx.HTTPError as exc:
-        raise SsoError(f"SSO redirect request failed: {exc}") from exc
+        raise SSOError(f"SSO redirect request failed: {exc}") from exc
 
     final_url = str(resp.url)
     parsed = urlparse(final_url)
@@ -48,7 +48,7 @@ def get_sso_credentials(id_token: str) -> dict:
     md5str = _extract_query_value(query, "md5Str")
 
     if not user_code or not md5str:
-        raise SsoError(
+        raise SSOError(
             f"userCode/md5Str not found in final redirected URL: {final_url}"
         )
 

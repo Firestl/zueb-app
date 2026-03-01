@@ -85,13 +85,13 @@ def _build_client(id_token: str) -> JWXTClient:
 
 def get_available_semesters(id_token: str) -> list[dict]:
     """Get all selectable semesters from JWXT."""
-    client = _build_client(id_token)
     try:
-        return client.get_semester_items()
+        with _build_client(id_token) as client:
+            return client.get_semester_items()
+    except ScheduleError:
+        raise
     except Exception as e:
         raise ScheduleError(f"Failed to fetch semester list: {e}")
-    finally:
-        client.close()
 
 
 def get_schedule(
@@ -114,16 +114,16 @@ def get_schedule(
     if (year is None) != (term is None):
         raise ScheduleError("year and term must be provided together")
 
-    client = _build_client(id_token)
     try:
-        resolved_code = semester_code
-        if year is not None and term is not None:
-            resolved_code = client.resolve_semester_code(year, term)
-        return client.get_course_schedule(semester_code=resolved_code)
+        with _build_client(id_token) as client:
+            resolved_code = semester_code
+            if year is not None and term is not None:
+                resolved_code = client.resolve_semester_code(year, term)
+            return client.get_course_schedule(semester_code=resolved_code)
+    except ScheduleError:
+        raise
     except Exception as e:
         raise ScheduleError(f"Failed to fetch schedule: {e}")
-    finally:
-        client.close()
 
 
 def get_current_schedule(id_token: str) -> dict:

@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from cli.config import JWXT_BASE_URL
+
 
 class JWXTClientError(Exception):
     """JWXT client operation error."""
@@ -16,7 +18,7 @@ class JWXTClientError(Exception):
 class JWXTClient:
     """HTTP client for JWXT course schedule system."""
 
-    BASE_URL = "https://jwxt.zueb.edu.cn"
+    BASE_URL = JWXT_BASE_URL
     _DEFAULT_ENCRYPT_KEY = "1tkdum1tkcbb"
     _REQUEST_TYPE = "kbvueh5"
     _STEP_XNXQ = "xnxq"
@@ -55,6 +57,12 @@ class JWXTClient:
     def close(self) -> None:
         """Close underlying HTTP client."""
         self._client.close()
+
+    def __enter__(self) -> "JWXTClient":
+        return self
+
+    def __exit__(self, *args) -> None:
+        self.close()
 
     def _bootstrap_context(self) -> None:
         """Load runtime encryption/user context from H5 bootstrap JS."""
