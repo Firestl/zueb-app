@@ -13,3 +13,8 @@ GradleProject/build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Credentials
+.env
+
+__pycache__/
