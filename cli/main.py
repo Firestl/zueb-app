@@ -118,8 +118,9 @@ def attendance():
 @click.option("--semester", "semester_code", default=None, help="Semester code, e.g. 20250 or 20251")
 @click.option("--year", type=int, default=None, help="Academic year start, e.g. 2025 for 2025-2026")
 @click.option("--term", type=click.Choice(["1", "2"]), default=None, help="Term number: 1 or 2")
+@click.option("--week", type=click.IntRange(min=1), default=None, help="Week number, e.g. 1")
 @click.option("--list-semesters", is_flag=True, help="List selectable semesters and exit")
-def schedule(semester_code, year, term, list_semesters):
+def schedule(semester_code, year, term, week, list_semesters):
     """Show current semester course schedule."""
     session = _require_session()
     id_token = session["id_token"]
@@ -141,6 +142,7 @@ def schedule(semester_code, year, term, list_semesters):
             semester_code=semester_code,
             year=year,
             term=int(term) if term is not None else None,
+            week=week,
         )
     except ScheduleError as e:
         click.echo(f"Schedule query failed: {e}", err=True)

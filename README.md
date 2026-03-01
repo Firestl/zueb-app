@@ -82,16 +82,29 @@ uv run python -m cli schedule --list-semesters
 uv run python -m cli schedule --semester 20251
 ```
 
+- 按学期代码 + 周次查询：
+
+```bash
+uv run python -m cli schedule --semester 20251 --week 3
+```
+
 - 按学年 + 学期查询：
 
 ```bash
 uv run python -m cli schedule --year 2025 --term 2
 ```
 
+- 按学年 + 学期 + 周次查询：
+
+```bash
+uv run python -m cli schedule --year 2025 --term 2 --week 8
+```
+
 参数规则：
 
 - `--semester` 与 `--year/--term` 互斥。
 - `--term` 取值：`1`（第一学期）或 `2`（第二学期）。
+- `--week` 为正整数，且需在学期周次范围 `1..maxzc` 内。
 
 ## 命令总览
 

@@ -99,6 +99,7 @@ def get_schedule(
     semester_code: str | None = None,
     year: int | None = None,
     term: int | None = None,
+    week: int | None = None,
 ) -> dict:
     """
     Get schedule by semester code or by year/term.
@@ -108,6 +109,7 @@ def get_schedule(
         semester_code: Direct semester code, e.g. "20250"
         year: academic year start, e.g. 2025
         term: 1 for 第一学期, 2 for 第二学期
+        week: explicit week number, e.g. 3
     """
     if semester_code and (year is not None or term is not None):
         raise ScheduleError("use either semester_code or year+term, not both")
@@ -119,7 +121,21 @@ def get_schedule(
             resolved_code = semester_code
             if year is not None and term is not None:
                 resolved_code = client.resolve_semester_code(year, term)
-            return client.get_course_schedule(semester_code=resolved_code)
+
+            if week is None:
+                return client.get_course_schedule(semester_code=resolved_code)
+
+            baseline = client.get_course_schedule(semester_code=resolved_code)
+            maxzc_raw = baseline.get("maxzc")
+            try:
+                maxzc = int(str(maxzc_raw))
+            except (TypeError, ValueError):
+                raise ScheduleError("invalid maxzc in schedule response")
+
+            if week > maxzc:
+                raise ScheduleError(f"week {week} out of range: 1..{maxzc}")
+
+            return client.get_course_schedule(semester_code=resolved_code, week=str(week))
     except ScheduleError:
         raise
     except Exception as e:
