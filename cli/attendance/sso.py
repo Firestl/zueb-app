@@ -12,11 +12,14 @@ Flow:
     → follows redirects → final URL contains userCode + md5Str
 """
 
+import logging
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 
 from cli.config import DEFAULT_HEADERS, WEBHR_BASE_URL
+
+logger = logging.getLogger(__name__)
 
 # The target attendance card page path within the WebHR app.
 _TARGET_URL = "App-apply/App-apply-kqcard/index"
@@ -59,6 +62,8 @@ def get_sso_credentials(id_token: str) -> dict:
     if not id_token:
         raise SSOError("id_token is required")
 
+    logger.info("Requesting WebHR SSO credentials...")
+
     headers = {
         **DEFAULT_HEADERS,
         "x-id-token": id_token,
@@ -74,6 +79,7 @@ def get_sso_credentials(id_token: str) -> dict:
         with httpx.Client(
             headers=headers, follow_redirects=True, timeout=30.0
         ) as client:
+            logger.debug("Following SSO redirects to WebHR...")
             resp = client.get(WEBHR_BASE_URL + "webhrN2SSOAPP", params=params)
             resp.raise_for_status()
     except httpx.HTTPError as exc:
@@ -81,6 +87,7 @@ def get_sso_credentials(id_token: str) -> dict:
 
     # After following all redirects, the final URL should contain the credentials.
     final_url = str(resp.url)
+    logger.debug("SSO final URL: %s", final_url[:120])
     parsed = urlparse(final_url)
     query = parse_qs(parsed.query)
 
@@ -92,6 +99,7 @@ def get_sso_credentials(id_token: str) -> dict:
             f"userCode/md5Str not found in final redirected URL: {final_url}"
         )
 
+    logger.debug("Extracted user_code=%s, md5str=%s...", user_code, md5str[:8])
     return {
         "user_code": user_code,
         "md5str": md5str,

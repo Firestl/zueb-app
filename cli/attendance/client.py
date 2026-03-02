@@ -12,10 +12,13 @@ along with the current Unix timestamp used in the signed payload.
 """
 
 import json
+import logging
 
 import httpx
 
 from cli.config import DEFAULT_HEADERS, WEBHR_BASE_URL
+
+logger = logging.getLogger(__name__)
 
 
 class WebHRError(Exception):
@@ -104,16 +107,19 @@ class WebHRClient:
             "timestamp": timestamp,
         }
 
+        logger.info("POST appLoginsso for user_code=%s", user_code)
         response = self._client.post(
             WEBHR_BASE_URL + "appLoginsso",
             headers=headers,
             json=payload,
         )
+        logger.debug("appLoginsso response status=%d", response.status_code)
         data = _parse_json_response(response, "appLoginsso")
 
         token = ((data.get("data") or {}).get("data") or {}).get("token")
         if not token:
             raise WebHRError("appLoginsso response missing data.data.token")
+        logger.debug("Obtained webhrtoken (len=%d)", len(token))
         return token
 
     def get_kqcard_info(
@@ -152,11 +158,13 @@ class WebHRClient:
             "timestamp": timestamp,
         }
 
+        logger.info("POST getKqCardInfo")
         response = self._client.post(
             WEBHR_BASE_URL + "AppKqCard/getKqCardInfo",
             headers=headers,
             json=payload,
         )
+        logger.debug("getKqCardInfo response status=%d", response.status_code)
         return _parse_json_response(response, "getKqCardInfo")
 
     def close(self):

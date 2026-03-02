@@ -11,9 +11,12 @@ Files written under ~/.config/zueb-cli/:
 """
 
 import json
+import logging
 import uuid
 
 from cli.config import DEVICE_FILE, TOKEN_FILE
+
+logger = logging.getLogger(__name__)
 
 
 def get_or_create_device_id() -> str:
@@ -25,10 +28,13 @@ def get_or_create_device_id() -> str:
     which is required by the Supwisdom SSO to track device registrations.
     """
     if DEVICE_FILE.exists():
-        return json.loads(DEVICE_FILE.read_text())["device_id"]
+        device_id = json.loads(DEVICE_FILE.read_text())["device_id"]
+        logger.debug("Loaded existing device_id=%s", device_id)
+        return device_id
     device_id = str(uuid.uuid4())
     DEVICE_FILE.parent.mkdir(parents=True, exist_ok=True)
     DEVICE_FILE.write_text(json.dumps({"device_id": device_id}))
+    logger.debug("Created new device_id=%s", device_id)
     return device_id
 
 
@@ -43,6 +49,7 @@ def save_session(id_token: str, username: str, device_id: str) -> None:
     TOKEN_FILE.write_text(
         json.dumps({"id_token": id_token, "username": username, "device_id": device_id})
     )
+    logger.info("Session saved for user=%s", username)
 
 
 def load_session() -> dict | None:
@@ -52,7 +59,10 @@ def load_session() -> dict | None:
     Callers should check for None and prompt the user to run `login`.
     """
     if TOKEN_FILE.exists():
-        return json.loads(TOKEN_FILE.read_text())
+        data = json.loads(TOKEN_FILE.read_text())
+        logger.debug("Session loaded for user=%s", data.get("username"))
+        return data
+    logger.debug("No session file found")
     return None
 
 
@@ -63,3 +73,4 @@ def clear_session() -> None:
     """
     if TOKEN_FILE.exists():
         TOKEN_FILE.unlink()
+    logger.info("Session file cleared")

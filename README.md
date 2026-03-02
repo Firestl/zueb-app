@@ -106,11 +106,24 @@ uv run python -m cli schedule --year 2025 --term 2 --week 8
 - `--term` 取值：`1`（第一学期）或 `2`（第二学期）。
 - `--week` 为正整数，且需在学期周次范围 `1..maxzc` 内。
 
+## 日志与调试
+
+默认输出 INFO 级别日志，可观察每步操作。加 `-v` 开启 DEBUG 详细日志：
+
+```bash
+uv run python -m cli -v login -u 你的工号 -p 你的密码
+uv run python -m cli -v schedule
+```
+
 ## 命令总览
 
 ```bash
 uv run python -m cli --help
 ```
+
+全局选项：
+
+- `-v` / `--verbose`：开启 DEBUG 级别详细日志
 
 当前命令：
 

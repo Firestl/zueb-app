@@ -2,9 +2,12 @@
 
 import base64
 import json
+import logging
 
 from cli.schedule.client import JWXTClient
 from cli.schedule.sso import SSOError, get_jwxt_session
+
+logger = logging.getLogger(__name__)
 
 
 class ScheduleError(Exception):
@@ -20,6 +23,7 @@ def _decode_token_payload(id_token: str) -> dict:
     Returns:
         Decoded payload dict when parsing succeeds; otherwise an empty dict.
     """
+    logger.debug("Decoding JWT payload...")
     parts = id_token.split(".")
     if len(parts) < 2:
         return {}
@@ -50,7 +54,9 @@ def _extract_login_id_from_token(id_token: str) -> str:
     if not payload:
         return ""
 
-    return payload.get("ATTR_userNo") or payload.get("sub") or ""
+    login_id = payload.get("ATTR_userNo") or payload.get("sub") or ""
+    logger.debug("Extracted login_id=%s from token", login_id)
+    return login_id
 
 
 def _extract_user_type_from_token(id_token: str) -> str:
@@ -68,23 +74,29 @@ def _extract_user_type_from_token(id_token: str) -> str:
 
     direct = payload.get("usertype") or payload.get("userType")
     if isinstance(direct, str) and direct in {"TEA", "STU", "NST"}:
+        logger.debug("Extracted user_type=%s from token", direct)
         return direct
 
     code = payload.get("ATTR_identityTypeCode") or payload.get("ATTR_identityTypeId")
     if isinstance(code, str):
         code = code.upper()
         if code.startswith("T"):
+            logger.debug("Extracted user_type=%s from token", "TEA")
             return "TEA"
         if code.startswith("S"):
+            logger.debug("Extracted user_type=%s from token", "STU")
             return "STU"
         if code.startswith("N"):
+            logger.debug("Extracted user_type=%s from token", "NST")
             return "NST"
 
     name = payload.get("ATTR_identityTypeName")
     if isinstance(name, str):
         if "教" in name or "职工" in name:
+            logger.debug("Extracted user_type=%s from token", "TEA")
             return "TEA"
         if "学" in name:
+            logger.debug("Extracted user_type=%s from token", "STU")
             return "STU"
 
     return ""
@@ -92,15 +104,19 @@ def _extract_user_type_from_token(id_token: str) -> str:
 
 def _build_client(id_token: str) -> JWXTClient:
     """Create an authenticated JWXT client from CAS id_token."""
+    logger.debug("Building JWXT client: SSO → JSESSIONID...")
     try:
         jsessionid = get_jwxt_session(id_token)
     except SSOError as e:
         raise ScheduleError(f"SSO authentication failed: {e}")
 
+    login_id = _extract_login_id_from_token(id_token)
+    user_type = _extract_user_type_from_token(id_token)
+    logger.debug("JWXT client ready (login_id=%s, user_type=%s)", login_id, user_type)
     return JWXTClient(
         jsessionid,
-        login_id=_extract_login_id_from_token(id_token),
-        user_type=_extract_user_type_from_token(id_token),
+        login_id=login_id,
+        user_type=user_type,
     )
 
 
@@ -116,6 +132,7 @@ def get_available_semesters(id_token: str) -> list[dict]:
     Raises:
         ScheduleError: If SSO/JWXT request fails.
     """
+    logger.debug("Fetching available semesters...")
     try:
         with _build_client(id_token) as client:
             return client.get_semester_items()
@@ -146,6 +163,7 @@ def get_schedule(
         term: 1 for 第一学期, 2 for 第二学期
         week: explicit week number, e.g. 3
     """
+    logger.debug("Fetching schedule (semester=%s, year=%s, term=%s, week=%s)", semester_code, year, term, week)
     if semester_code and (year is not None or term is not None):
         raise ScheduleError("use either semester_code or year+term, not both")
     if (year is None) != (term is None):

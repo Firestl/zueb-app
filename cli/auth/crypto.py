@@ -1,7 +1,10 @@
 import base64
+import logging
 
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.serialization import load_der_public_key
+
+logger = logging.getLogger(__name__)
 
 
 def rsa_encrypt(pub_key_pem: str, plaintext: str) -> str:
@@ -17,5 +20,7 @@ def rsa_encrypt(pub_key_pem: str, plaintext: str) -> str:
 
     der = base64.b64decode(pem)
     public_key = load_der_public_key(der)
+    logger.debug("RSA encrypting %d bytes of plaintext", len(plaintext.encode("utf-8")))
     ciphertext = public_key.encrypt(plaintext.encode("utf-8"), padding.PKCS1v15())
+    logger.debug("RSA encryption complete, ciphertext length=%d", len(ciphertext))
     return base64.b64encode(ciphertext).decode("ascii")

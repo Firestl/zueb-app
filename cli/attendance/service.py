@@ -14,9 +14,13 @@ Card data structure (from response["data"]["data"]):
   "无" means the card has not been punched.
 """
 
+import logging
+
 from cli.attendance.client import WebHRClient, WebHRError
 from cli.attendance.sign import SignatureError, generate_signature
 from cli.attendance.sso import SSOError, get_sso_credentials
+
+logger = logging.getLogger(__name__)
 
 
 class AttendanceError(Exception):
@@ -63,24 +67,31 @@ def get_attendance_status(id_token: str) -> dict:
     """
     try:
         # Step 1: Exchange id_token for WebHR SSO credentials.
+        logger.info("Step 1: Exchanging id_token for WebHR SSO credentials...")
         sso = get_sso_credentials(id_token)
         user_code = sso["user_code"]
         md5str = sso["md5str"]
+        logger.info("Step 1: Got user_code=%s", user_code)
 
         # Step 2 & 3: Sign + get session token.
+        logger.info("Step 2: Generating first RSA signature...")
         first_sign = generate_signature(md5str, user_code)
 
         with WebHRClient() as client:
+            logger.info("Step 3: Getting WebHR session token...")
             webhrtoken = client.get_webhrtoken(
                 user_code=user_code,
                 md5str=md5str,
                 signature=first_sign["sign"],
                 timestamp=first_sign["timestamp"],
             )
+            logger.info("Step 3: Got webhrtoken (len=%d)", len(webhrtoken))
 
             # Step 4 & 5: Fresh signature + fetch card data.
             # A new signature is required because the timestamp must be current.
+            logger.info("Step 4: Generating second RSA signature...")
             second_sign = generate_signature(md5str, user_code)
+            logger.info("Step 5: Fetching card data...")
             raw = client.get_kqcard_info(
                 webhrtoken=webhrtoken,
                 signature=second_sign["sign"],
@@ -96,6 +107,7 @@ def get_attendance_status(id_token: str) -> dict:
         sbk_done = _is_card_done(sbk_time)
         xbk_done = _is_card_done(xbk_time)
 
+        logger.info("Attendance result: sbk_done=%s, xbk_done=%s", sbk_done, xbk_done)
         return {
             "sbk_time": sbk_time,
             "xbk_time": xbk_time,

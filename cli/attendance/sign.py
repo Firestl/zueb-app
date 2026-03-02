@@ -17,10 +17,13 @@ Signature payload format:
 """
 
 import base64
+import logging
 import time
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+logger = logging.getLogger(__name__)
 
 
 class SignatureError(Exception):
@@ -74,6 +77,7 @@ def generate_signature(md5str: str, user_code: str) -> dict:
         raise SignatureError("user_code is required")
 
     timestamp = int(time.time())
+    logger.debug("Generating RSA-SHA256 signature for user_code=%s, timestamp=%d", user_code, timestamp)
     # Payload format matches the server-side verification logic in the WebHR app.
     payload = f"{md5str}&{user_code}&{timestamp}"
 
@@ -89,6 +93,7 @@ def generate_signature(md5str: str, user_code: str) -> dict:
         raise SignatureError(f"failed to sign payload: {exc}") from exc
 
     signature = base64.b64encode(raw_signature).decode("ascii")
+    logger.debug("Signature generated (len=%d)", len(signature))
     return {
         "sign": signature,
         "timestamp": timestamp,

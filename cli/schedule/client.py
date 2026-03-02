@@ -1,6 +1,7 @@
 """HTTP client for JWXT (教务系统) API."""
 
 import hashlib
+import logging
 import math
 import re
 import time
@@ -9,6 +10,8 @@ from typing import Any
 import httpx
 
 from cli.config import JWXT_BASE_URL
+
+logger = logging.getLogger(__name__)
 
 
 class JWXTClientError(Exception):
@@ -33,6 +36,7 @@ class JWXTClient:
             login_id: Optional fallback user id (student/staff number)
             user_type: Optional fallback user type (TEA/STU/NST)
         """
+        logger.debug("Initializing JWXT client with JSESSIONID (len=%d)", len(jsessionid))
         self.jsessionid = jsessionid
         self.login_id = login_id
         self.user_type = user_type
@@ -66,6 +70,7 @@ class JWXTClient:
 
     def _bootstrap_context(self) -> None:
         """Load runtime context (G_ENCRYPT/G_LOGIN_ID/G_USER_TYPE) from H5 JS."""
+        logger.debug("Bootstrapping JWXT context from H5 JS...")
         # Keep behavior close to app traffic: visit index first, then context JS.
         self._client.get("/h5/index.html")
         resp = self._client.get("/custom/js/SetRootPath4H5.jsp")
@@ -84,9 +89,14 @@ class JWXTClient:
         if js_user_type and js_user_type.upper() != "SPE":
             self.user_type = js_user_type
 
+        logger.debug(
+            "Context: login_id=%s, user_type=%s, encrypt_key=%s...",
+            self.login_id, self.user_type, self.encrypt_key[:8],
+        )
         self.school_code = (
             self._extract_js_var(script, "G_SCHOOL_CODE") or self.school_code
         )
+        logger.debug("School code: %s", self.school_code)
         user_code = self._extract_js_var(script, "G_USER_CODE")
 
         if not self.user_type:
@@ -270,15 +280,19 @@ class JWXTClient:
             httpx.HTTPError: Request failure or non-2xx status code.
             ValueError: Response body is not valid JSON.
         """
+        logger.debug("jw_apply GET %s step=%s", endpoint, step)
         plain = self._build_plain_payload(step, payload)
+        encrypted = self._of_encrypt(plain, self.encrypt_key)
+        logger.debug("Encrypted param length=%d", len(encrypted))
         params = {
             "action": "jw_apply",
-            "param": self._of_encrypt(plain, self.encrypt_key),
+            "param": encrypted,
             "param2": self._get_md5_2(plain),
             "timestamp": str(int(time.time() * 1000)),
         }
 
         resp = self._client.get(endpoint, params=params)
+        logger.debug("Response status=%d", resp.status_code)
         resp.raise_for_status()
         return resp.json()
 
@@ -291,6 +305,7 @@ class JWXTClient:
             - mc: display name
             - dqxq: current-semester marker ("1" means current)
         """
+        logger.debug("Fetching semester items...")
         data = self.get_semester_list()
         items = data.get("xnxq", [])
         if not isinstance(items, list):
@@ -307,6 +322,7 @@ class JWXTClient:
             year: academic year start, e.g. 2025 for "2025-2026学年"
             term: 1 (第一学期) or 2 (第二学期)
         """
+        logger.debug("Resolving semester code for year=%d, term=%d", year, term)
         if term not in (1, 2):
             raise JWXTClientError("term must be 1 or 2")
 
@@ -316,6 +332,7 @@ class JWXTClient:
         target_dm = f"{year}{0 if term == 1 else 1}"
         for item in items:
             if str(item.get("dm", "")) == target_dm:
+                logger.debug("Resolved semester code=%s", target_dm)
                 return target_dm
 
         # Fallback by display name.
@@ -325,6 +342,7 @@ class JWXTClient:
             mc = str(item.get("mc", ""))
             dm = str(item.get("dm", ""))
             if dm and year_label in mc and term_label in mc:
+                logger.debug("Resolved semester code=%s", dm)
                 return dm
 
         raise JWXTClientError(
@@ -341,6 +359,7 @@ class JWXTClient:
         Raises:
             httpx.HTTPError: If request fails
         """
+        logger.debug("GET /wap/getxnxq_xl.action")
         return self._jw_apply_get("/wap/getxnxq_xl.action", self._STEP_XNXQ, {})
 
     def get_course_schedule(
@@ -359,6 +378,7 @@ class JWXTClient:
         Raises:
             httpx.HTTPError: If request fails
         """
+        logger.debug("GET /wap/mycourseschedule.action semester=%s week=%s", semester_code, week)
         semester_items = self.get_semester_items()
         current_dm = ""
         for item in semester_items:

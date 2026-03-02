@@ -1,3 +1,5 @@
+import logging
+
 import click
 from dotenv import load_dotenv
 
@@ -9,9 +11,12 @@ from cli.schedule.service import ScheduleError, get_available_semesters, get_sch
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 
 def _require_session() -> dict:
     """Return current session or exit with an error message."""
+    logger.debug("Loading saved session...")
     session = load_session()
     if session is None:
         click.echo("Not logged in. Please run login first.", err=True)
@@ -21,12 +26,21 @@ def _require_session() -> dict:
         click.echo("Session is missing id_token. Please login again.", err=True)
         raise SystemExit(1)
 
+    logger.debug("Session loaded for user=%s", session.get("username", "?"))
     return session
 
 
 @click.group()
-def cli():
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose debug logging")
+def cli(verbose):
     """ZUEB CLI — command-line interface for Zhengzhou University of Economics and Business."""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logger.debug("CLI started with verbose logging enabled")
 
 
 @cli.command(name="login")
@@ -49,16 +63,20 @@ def login_cmd(username, password):
     if password is None:
         password = click.prompt("Password", hide_input=True)
 
+    logger.info("Attempting login for user=%s", username)
     click.echo("Logging in...")
     try:
         result = login(username, password)
     except MFARequiredError as e:
+        logger.error("MFA required: %s", e)
         click.echo(f"MFA required: {e}", err=True)
         raise SystemExit(1)
     except LoginError as e:
+        logger.error("Login failed: %s", e)
         click.echo(f"Login failed: {e}", err=True)
         raise SystemExit(1)
 
+    logger.info("Login successful for user=%s", username)
     click.echo("Login successful!")
 
     # Display token to verify authentication
@@ -81,6 +99,7 @@ def login_cmd(username, password):
 @cli.command()
 def status():
     """Show current session information."""
+    logger.debug("Checking session status")
     session = load_session()
     if session is None:
         click.echo("Not logged in.")
@@ -95,11 +114,13 @@ def status():
 @cli.command()
 def logout():
     """Clear saved session."""
+    logger.debug("Logout requested")
     session = load_session()
     if session is None:
         click.echo("Not logged in.")
         return
     clear_session()
+    logger.info("Logged out user=%s", session.get("username", "?"))
     click.echo(f"Logged out (was: {session.get('username', '(unknown)')})")
 
 
@@ -109,10 +130,12 @@ def attendance():
     session = _require_session()
     id_token = session["id_token"]
 
+    logger.info("Fetching attendance status")
     click.echo("Fetching attendance status...")
     try:
         result = get_attendance_status(id_token)
     except AttendanceError as e:
+        logger.error("Attendance query failed: %s", e)
         click.echo(f"Attendance query failed: {e}", err=True)
         raise SystemExit(1)
 
@@ -121,6 +144,7 @@ def attendance():
     sbk_mark = "✓" if result.get("sbk_done") else "✗"
     xbk_mark = "✓" if result.get("xbk_done") else "✗"
 
+    logger.debug("Attendance result: sbk=%s xbk=%s", sbk_time, xbk_time)
     click.echo("Attendance Status:")
     click.echo(f"  上班卡 (Clock-in):  {sbk_time}  {sbk_mark}")
     click.echo(f"  下班卡 (Clock-out): {xbk_time}  {xbk_mark}")
@@ -154,15 +178,20 @@ def schedule(semester_code, year, term, week, list_semesters):
     id_token = session["id_token"]
 
     if list_semesters:
+        logger.info("Fetching semester list")
         click.echo("Fetching semester list...")
         try:
             semesters = get_available_semesters(id_token)
         except ScheduleError as e:
+            logger.error("Schedule query failed: %s", e)
             click.echo(f"Schedule query failed: {e}", err=True)
             raise SystemExit(1)
+        logger.debug("Got %d semesters", len(semesters))
         print_semester_list(semesters)
         return
 
+    logger.info("Fetching course schedule (semester=%s, year=%s, term=%s, week=%s)",
+                semester_code, year, term, week)
     click.echo("Fetching course schedule...")
     try:
         data = get_schedule(
@@ -173,7 +202,10 @@ def schedule(semester_code, year, term, week, list_semesters):
             week=week,
         )
     except ScheduleError as e:
+        logger.error("Schedule query failed: %s", e)
         click.echo(f"Schedule query failed: {e}", err=True)
         raise SystemExit(1)
 
+    logger.debug("Schedule data received for xn=%s xq=%s zc=%s",
+                 data.get("xn"), data.get("xq"), data.get("zc"))
     print_schedule(data)
