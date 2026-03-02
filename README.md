@@ -120,6 +120,47 @@ uv run python -m cli --help
 - `attendance`
 - `schedule`
 
+## Telegram Bot / Skills 使用方法
+
+1. 配置 Bot 环境变量（建议写入 `.env`）：
+
+```env
+TELEGRAM_BOT_TOKEN=你的TelegramBotToken
+ANTHROPIC_API_KEY=你的AnthropicKey
+ANTHROPIC_BASE_URL=https://your-third-party-gateway.example.com
+BOT_LOG_LEVEL=INFO
+OWNER_ID=你的Telegram数字用户ID
+```
+
+`ANTHROPIC_BASE_URL` 可选；配置后会使用第三方网关而非 Anthropic 默认地址。
+`BOT_LOG_LEVEL` 可选；支持 `DEBUG/INFO/WARNING/ERROR/CRITICAL`，默认 `INFO`。
+
+2. 启动机器人：
+
+```bash
+.venv/bin/python -m bot
+```
+
+3. 在 Telegram 中使用：
+
+- `/login <学号或工号> <密码>`
+- `查看课表`、`下周有什么课`、`打卡了吗`
+- `/logout`
+
+说明：
+
+- Skills 从项目目录 `.claude/skills/` 自动加载。
+- Agent 通过 `bot/agent/helper.py` 调用底层 CLI 服务，脚本统一输出 JSON。
+- 会话为文件持久化（`~/.config/zueb-cli/session.json`），登录后可跨消息复用。
+
+4. 可直接测试 helper：
+
+```bash
+.venv/bin/python bot/agent/helper.py status
+.venv/bin/python bot/agent/helper.py schedule --list
+.venv/bin/python bot/agent/helper.py attendance
+```
+
 ## 本地数据文件
 
 会话和设备信息保存在：
