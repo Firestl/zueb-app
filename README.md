@@ -130,10 +130,16 @@ ANTHROPIC_API_KEY=你的AnthropicKey
 ANTHROPIC_BASE_URL=https://your-third-party-gateway.example.com
 BOT_LOG_LEVEL=INFO
 OWNER_ID=你的Telegram数字用户ID
+NIGHTLY_CHECK_ENABLED=true
+NIGHTLY_CHECK_TIME=21:30
+NIGHTLY_CHECK_TIMEZONE=Asia/Shanghai
+NIGHTLY_CHECK_RETRIES=2
+NIGHTLY_CHECK_PROMPT=查看是否打卡
 ```
 
 `ANTHROPIC_BASE_URL` 可选；配置后会使用第三方网关而非 Anthropic 默认地址。
 `BOT_LOG_LEVEL` 可选；支持 `DEBUG/INFO/WARNING/ERROR/CRITICAL`，默认 `INFO`。
+夜间自动检查配置可选，默认每日 `21:30`（`Asia/Shanghai`）执行一次。
 
 2. 启动机器人：
 
@@ -160,6 +166,13 @@ OWNER_ID=你的Telegram数字用户ID
 .venv/bin/python bot/agent/helper.py schedule --list
 .venv/bin/python bot/agent/helper.py attendance
 ```
+
+## 每晚自动打卡检查推送
+
+- 机器人进程启动后会在后台调度每日任务，不需要额外 `cron`。
+- 默认每天 `21:30`（`Asia/Shanghai`）执行 `查看是否打卡` Skill，并主动发消息到 `OWNER_ID`。
+- 查询失败会自动重试（默认 2 次）；最终失败也会推送错误原因。
+- 若未登录或会话失效，不会自动重登，只会推送失败信息。
 
 ## 本地数据文件
 
