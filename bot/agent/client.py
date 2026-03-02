@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from time import perf_counter
 
 from claude_agent_sdk import (
@@ -21,7 +22,7 @@ from claude_agent_sdk import (
 from bot.agent.prompts import SYSTEM_PROMPT
 
 # 项目根目录，SDK 据此查找 .claude/skills/ 等资源
-_PROJECT_CWD = "/home/lsl/Projects/zueb-app"
+_PROJECT_CWD = str(Path(__file__).resolve().parents[2])
 # 流式响应的最长等待时间（秒），防止 SDK 永久挂起
 _RESPONSE_TIMEOUT_SECONDS = 45
 
