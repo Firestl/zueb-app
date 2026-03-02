@@ -133,7 +133,7 @@ bot/
 │   └── prompts.py       # 系统提示词：定义 Claude 的角色和行为规则
 │
 ├── handlers/            # Telegram 消息处理器
-│   ├── commands.py      # 命令处理：/start、/help、/login、/logout
+│   ├── commands.py      # 命令处理：/start、/help、/login、/logout、/reset
 │   └── chat.py          # 聊天处理：非命令的自由文本 → Claude Agent
 │
 └── scheduler/           # 定时任务
@@ -254,7 +254,7 @@ safe_user = {
 
 ### 4.4 命令处理 — `handlers/commands.py`
 
-处理 Telegram 的斜杠命令（`/start`、`/help`、`/login`、`/logout`）。
+处理 Telegram 的斜杠命令（`/start`、`/help`、`/login`、`/logout`、`/reset`）。
 
 **`/login` 为什么比较特殊？**
 

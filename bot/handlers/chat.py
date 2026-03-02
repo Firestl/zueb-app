@@ -10,6 +10,7 @@ from aiogram.enums import ChatAction
 from aiogram.types import Message
 
 from bot.agent.client import AgentManager, AgentManagerError
+from bot.handlers.utils import chat_session_scope
 
 # Telegram 单条消息字符上限（留一定余量，官方限制 4096）
 _TELEGRAM_TEXT_LIMIT = 3900
@@ -66,8 +67,11 @@ def create_chat_router(agent_manager: AgentManager) -> Router:
                 chat_id=message.chat.id,
                 action=ChatAction.TYPING,
             )
-            # 调用 AI Agent 获取回复
-            reply = await agent_manager.query(text)
+            # 同一 chat 复用同一个 Agent session，保留多轮上下文
+            reply = await agent_manager.query(
+                text,
+                session_scope=chat_session_scope(chat_id),
+            )
         except AgentManagerError as exc:
             # Agent 已知错误，直接将错误信息返回给用户
             elapsed_ms = int((perf_counter() - started_at) * 1000)

@@ -18,6 +18,7 @@ from bot.agent.client import AgentManager
 _TELEGRAM_TEXT_LIMIT = 3900
 
 logger = logging.getLogger(__name__)
+_SCHEDULER_SESSION_SCOPE = "telegram-scheduler:nightly-attendance"
 
 
 def _parse_time_of_day(value: str) -> tuple[int, int]:
@@ -154,11 +155,15 @@ class NightlyAttendanceScheduler:
         """执行一次考勤检查，失败时按配置重试，最终将结果发送给 owner。"""
         started = datetime.now(self._timezone)
         last_error: Exception | None = None
+        await self._agent_manager.reset_session(_SCHEDULER_SESSION_SCOPE)
 
         for attempt in range(self._retries + 1):
             try:
                 # 调用 Agent 查询考勤状态
-                result = await self._agent_manager.query(self._prompt)
+                result = await self._agent_manager.query(
+                    self._prompt,
+                    session_scope=_SCHEDULER_SESSION_SCOPE,
+                )
                 text = (
                     f"【每晚打卡检查 {started.strftime('%Y-%m-%d %H:%M')}】\n"
                     f"{result.strip() or '未获取到结果，请手动确认。'}"

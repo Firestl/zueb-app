@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import logging
 from pathlib import Path
 from time import perf_counter
+from uuid import uuid4
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -38,6 +39,7 @@ class AgentManagerError(Exception):
 @dataclass(slots=True)
 class _QueryRequest:
     prompt: str
+    session_id: str
     future: asyncio.Future[str]
 
 
@@ -54,7 +56,7 @@ class AgentManager:
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._session_id = "telegram-owner"
+        self._session_ids: dict[str, str] = {}
         self._request_queue: asyncio.Queue[_Request] | None = None
         self._worker_task: asyncio.Task[None] | None = None
 
@@ -93,9 +95,14 @@ class AgentManager:
             logger.exception("ClaudeSDKClient reconnect failed")
             return None
 
-    async def _collect_response(self, client: ClaudeSDKClient, prompt: str) -> tuple[str, int]:
+    async def _collect_response(
+        self,
+        client: ClaudeSDKClient,
+        prompt: str,
+        session_id: str,
+    ) -> tuple[str, int]:
         """执行一次查询并收集流式文本块。"""
-        await client.query(prompt, session_id=self._session_id)
+        await client.query(prompt, session_id=session_id)
 
         parts: list[str] = []
         # 流式接收响应，设置硬超时防止 SDK 永久阻塞
@@ -157,10 +164,15 @@ class AgentManager:
                     if client is None:
                         client = await self._new_client()
 
-                    reply, chunks = await self._collect_response(client, request.prompt)
+                    reply, chunks = await self._collect_response(
+                        client,
+                        request.prompt,
+                        request.session_id,
+                    )
                     elapsed_ms = int((perf_counter() - started_at) * 1000)
                     logger.info(
-                        "Claude query completed: elapsed_ms=%s response_chars=%s chunks=%s",
+                        "Claude query completed: session_id=%s elapsed_ms=%s response_chars=%s chunks=%s",
+                        request.session_id,
                         elapsed_ms,
                         len(reply),
                         chunks,
@@ -280,13 +292,32 @@ class AgentManager:
             except Exception:
                 logger.exception("Claude worker stopped with error")
 
-    async def query(self, text: str) -> str:
+    def _resolve_session_id(self, session_scope: str) -> str:
+        session_id = self._session_ids.get(session_scope)
+        if session_id is None:
+            session_id = f"{session_scope}:{uuid4().hex}"
+            self._session_ids[session_scope] = session_id
+        return session_id
+
+    async def reset_session(self, session_scope: str) -> None:
+        scope = session_scope.strip()
+        if not scope:
+            raise AgentManagerError("会话范围不能为空。")
+
+        async with self._lock:
+            self._session_ids.pop(scope, None)
+        logger.info("Claude session reset: session_scope=%s", scope)
+
+    async def query(self, text: str, *, session_scope: str = "default") -> str:
         prompt = text.strip()
         if not prompt:
             return "请输入要查询的内容。"
+        scope = session_scope.strip()
+        if not scope:
+            raise AgentManagerError("会话范围不能为空。")
 
         started_at = perf_counter()
-        logger.info("Claude query started: prompt_len=%s", len(prompt))
+        logger.info("Claude query started: session_scope=%s prompt_len=%s", scope, len(prompt))
         loop = asyncio.get_running_loop()
         future: asyncio.Future[str] = loop.create_future()
         async with self._lock:
@@ -294,7 +325,8 @@ class AgentManager:
             worker = self._worker_task
             if queue is None or worker is None or worker.done():
                 raise AgentManagerError("Agent 尚未连接。")
-            await queue.put(_QueryRequest(prompt=prompt, future=future))
+            session_id = self._resolve_session_id(scope)
+            await queue.put(_QueryRequest(prompt=prompt, session_id=session_id, future=future))
 
         try:
             reply = await future
@@ -302,9 +334,14 @@ class AgentManager:
             raise
         except Exception as exc:
             elapsed_ms = int((perf_counter() - started_at) * 1000)
-            logger.exception("Claude query failed: elapsed_ms=%s", elapsed_ms)
+            logger.exception("Claude query failed: session_scope=%s elapsed_ms=%s", scope, elapsed_ms)
             raise AgentManagerError(f"Claude 查询失败：{exc}") from exc
 
         elapsed_ms = int((perf_counter() - started_at) * 1000)
-        logger.info("Claude query finished: elapsed_ms=%s response_chars=%s", elapsed_ms, len(reply))
+        logger.info(
+            "Claude query finished: session_scope=%s elapsed_ms=%s response_chars=%s",
+            scope,
+            elapsed_ms,
+            len(reply),
+        )
         return reply

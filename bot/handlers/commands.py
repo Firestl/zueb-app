@@ -10,6 +10,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from bot.agent.client import AgentManager
+from bot.handlers.utils import chat_session_scope
 from cli.auth.login import LoginError, MFARequiredError, login
 from cli.auth.token import clear_session, load_session
 
@@ -47,7 +48,8 @@ def create_commands_router(agent_manager: AgentManager) -> Router:
             "可用命令：\n"
             "/help 查看帮助\n"
             "/login <学号或工号> <密码> 登录\n"
-            "/logout 退出登录"
+            "/logout 退出登录\n"
+            "/reset 清空当前聊天上下文"
         )
 
     @router.message(Command("help"))
@@ -59,7 +61,8 @@ def create_commands_router(agent_manager: AgentManager) -> Router:
             "使用方式：\n"
             "1) /login <学号或工号> <密码>\n"
             "2) 直接发消息，例如：查看我本周课表、打卡了吗\n"
-            "3) /logout 退出当前账号\n\n"
+            "3) /logout 退出当前账号\n"
+            "4) /reset 清空当前聊天历史上下文\n\n"
             "提示：/login 指令消息会在处理后尝试删除，以减少密码暴露风险。"
         )
 
@@ -173,5 +176,13 @@ def create_commands_router(agent_manager: AgentManager) -> Router:
         # 没有活跃 session 时也正常提示
         logger.info("Command /logout no active session: user_id=%s chat_id=%s", user_id, chat_id)
         await message.answer("已退出登录。")
+
+    @router.message(Command("reset"))
+    async def reset_handler(message: Message) -> None:
+        """处理 /reset — 清空当前 Telegram chat 的 Agent 上下文。"""
+        user_id, chat_id = _message_context(message)
+        logger.info("Command /reset: user_id=%s chat_id=%s", user_id, chat_id)
+        await agent_manager.reset_session(chat_session_scope(chat_id))
+        await message.answer("已清空当前聊天上下文。接下来的消息会作为新的会话处理。")
 
     return router
