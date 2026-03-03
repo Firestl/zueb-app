@@ -39,6 +39,7 @@ class AgentManagerError(Exception):
 @dataclass(slots=True)
 class _QueryRequest:
     prompt: str
+    session_scope: str
     session_id: str
     future: asyncio.Future[str]
 
@@ -100,11 +101,12 @@ class AgentManager:
         client: ClaudeSDKClient,
         prompt: str,
         session_id: str,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int, str | None]:
         """执行一次查询并收集流式文本块。"""
         await client.query(prompt, session_id=session_id)
 
         parts: list[str] = []
+        resolved_session_id: str | None = None
         # 流式接收响应，设置硬超时防止 SDK 永久阻塞
         async with asyncio.timeout(_RESPONSE_TIMEOUT_SECONDS):
             async for msg in client.receive_response():
@@ -116,6 +118,9 @@ class AgentManager:
                             if chunk:
                                 parts.append(chunk)
                 elif isinstance(msg, ResultMessage):
+                    candidate_session_id = msg.session_id.strip()
+                    if candidate_session_id:
+                        resolved_session_id = candidate_session_id
                     # 若未收到文本块，则取最终结果作为兜底
                     if not parts and msg.result:
                         result_text = msg.result.strip()
@@ -123,8 +128,26 @@ class AgentManager:
                             parts.append(result_text)
 
         if not parts:
-            return "我没有拿到有效回复，请重试一次。", 0
-        return "\n".join(parts).strip(), len(parts)
+            return "我没有拿到有效回复，请重试一次。", 0, resolved_session_id
+        return "\n".join(parts).strip(), len(parts), resolved_session_id
+
+    async def _sync_session_id(
+        self,
+        *,
+        session_scope: str,
+        requested_session_id: str,
+        resolved_session_id: str | None,
+    ) -> str:
+        """以 SDK 返回值作为真实会话 ID，避免本地猜测导致偏差。"""
+        if not resolved_session_id:
+            return requested_session_id
+
+        async with self._lock:
+            current = self._session_ids.get(session_scope)
+            if current == requested_session_id:
+                self._session_ids[session_scope] = resolved_session_id
+
+        return resolved_session_id
 
     @staticmethod
     def _finish_query_future(fut: asyncio.Future[str], *, result: str | None = None, error: Exception | None = None) -> None:
@@ -164,15 +187,25 @@ class AgentManager:
                     if client is None:
                         client = await self._new_client()
 
-                    reply, chunks = await self._collect_response(
+                    reply, chunks, resolved_session_id = await self._collect_response(
                         client,
                         request.prompt,
                         request.session_id,
                     )
+                    effective_session_id = await self._sync_session_id(
+                        session_scope=request.session_scope,
+                        requested_session_id=request.session_id,
+                        resolved_session_id=resolved_session_id,
+                    )
                     elapsed_ms = int((perf_counter() - started_at) * 1000)
                     logger.info(
-                        "Claude query completed: session_id=%s elapsed_ms=%s response_chars=%s chunks=%s",
+                        (
+                            "Claude query completed: session_scope=%s requested_session_id=%s "
+                            "resolved_session_id=%s elapsed_ms=%s response_chars=%s chunks=%s"
+                        ),
+                        request.session_scope,
                         request.session_id,
+                        effective_session_id,
                         elapsed_ms,
                         len(reply),
                         chunks,
@@ -295,7 +328,8 @@ class AgentManager:
     def _resolve_session_id(self, session_scope: str) -> str:
         session_id = self._session_ids.get(session_scope)
         if session_id is None:
-            session_id = f"{session_scope}:{uuid4().hex}"
+            # 使用纯 UUID，避免将业务 scope 混入 Claude 会话 ID。
+            session_id = uuid4().hex
             self._session_ids[session_scope] = session_id
         return session_id
 
@@ -305,8 +339,12 @@ class AgentManager:
             raise AgentManagerError("会话范围不能为空。")
 
         async with self._lock:
-            self._session_ids.pop(scope, None)
-        logger.info("Claude session reset: session_scope=%s", scope)
+            previous_session_id = self._session_ids.pop(scope, None)
+        logger.info(
+            "Claude session reset: session_scope=%s previous_session_id=%s",
+            scope,
+            previous_session_id,
+        )
 
     async def query(self, text: str, *, session_scope: str = "default") -> str:
         prompt = text.strip()
@@ -326,7 +364,14 @@ class AgentManager:
             if queue is None or worker is None or worker.done():
                 raise AgentManagerError("Agent 尚未连接。")
             session_id = self._resolve_session_id(scope)
-            await queue.put(_QueryRequest(prompt=prompt, session_id=session_id, future=future))
+            await queue.put(
+                _QueryRequest(
+                    prompt=prompt,
+                    session_scope=scope,
+                    session_id=session_id,
+                    future=future,
+                )
+            )
 
         try:
             reply = await future
