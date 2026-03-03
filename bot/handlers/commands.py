@@ -9,7 +9,7 @@ from aiogram import Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
-from bot.agent.client import AgentManager
+from bot.agent.client import AgentManager, AgentManagerError
 from bot.handlers.utils import chat_session_scope
 from cli.auth.login import LoginError, MFARequiredError, login
 from cli.auth.token import clear_session, load_session
@@ -182,7 +182,25 @@ def create_commands_router(agent_manager: AgentManager) -> Router:
         """处理 /reset — 清空当前 Telegram chat 的 Agent 上下文。"""
         user_id, chat_id = _message_context(message)
         logger.info("Command /reset: user_id=%s chat_id=%s", user_id, chat_id)
-        await agent_manager.reset_session(chat_session_scope(chat_id))
+        try:
+            await agent_manager.reset_session(chat_session_scope(chat_id))
+        except AgentManagerError as exc:
+            logger.warning(
+                "Command /reset failed: user_id=%s chat_id=%s error=%s",
+                user_id,
+                chat_id,
+                exc,
+            )
+            await message.answer(f"清空聊天上下文失败：{exc}")
+            return
+        except Exception:
+            logger.exception(
+                "Command /reset unexpected error: user_id=%s chat_id=%s",
+                user_id,
+                chat_id,
+            )
+            await message.answer("清空聊天上下文时发生异常，请稍后重试。")
+            return
         await message.answer("已清空当前聊天上下文。接下来的消息会作为新的会话处理。")
 
     return router

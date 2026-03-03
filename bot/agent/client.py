@@ -26,8 +26,10 @@ from bot.agent.prompts import SYSTEM_PROMPT
 
 # 项目根目录，SDK 据此查找 .claude/skills/ 等资源
 _PROJECT_CWD = str(Path(__file__).resolve().parents[2])
-# 流式响应的最长等待时间（秒），防止 SDK 永久挂起
+# 单次 Claude 请求的最长等待时间（秒），防止 SDK 永久挂起
 _RESPONSE_TIMEOUT_SECONDS = 45
+# /reset 等待 worker 完成重连的最长时间（秒）
+_RESET_TIMEOUT_SECONDS = _RESPONSE_TIMEOUT_SECONDS + 15
 
 logger = logging.getLogger(__name__)
 
@@ -110,12 +112,11 @@ class AgentManager:
         session_id: str,
     ) -> tuple[str, int, str | None]:
         """执行一次查询并收集流式文本块。"""
-        await client.query(prompt, session_id=session_id)
-
         parts: list[str] = []
         resolved_session_id: str | None = None
-        # 流式接收响应，设置硬超时防止 SDK 永久阻塞
+        # 将 query + receive_response 一并纳入超时范围，避免前者阻塞时 worker 卡死。
         async with asyncio.timeout(_RESPONSE_TIMEOUT_SECONDS):
+            await client.query(prompt, session_id=session_id)
             async for msg in client.receive_response():
                 if isinstance(msg, AssistantMessage):
                     # 从助手消息中提取所有文本块
@@ -167,6 +168,16 @@ class AgentManager:
         assert result is not None
         fut.set_result(result)
 
+    @staticmethod
+    def _finish_void_future(fut: asyncio.Future[None], *, error: Exception | None = None) -> None:
+        """统一完成 void future，避免 reset/shutdown 请求悬挂。"""
+        if fut.done():
+            return
+        if error is not None:
+            fut.set_exception(error)
+            return
+        fut.set_result(None)
+
     async def _worker_loop(
         self,
         queue: asyncio.Queue[_Request],
@@ -182,15 +193,19 @@ class AgentManager:
             while True:
                 request = await queue.get()
                 if isinstance(request, _ShutdownRequest):
-                    if not request.future.done():
-                        request.future.set_result(None)
+                    self._finish_void_future(request.future)
                     break
 
                 if isinstance(request, _ResetRequest):
                     logger.info("Resetting Claude client for session_scope=%s", request.session_scope)
                     client = await self._reconnect_client(client)
-                    if not request.future.done():
-                        request.future.set_result(None)
+                    if client is None:
+                        self._finish_void_future(
+                            request.future,
+                            error=AgentManagerError("Claude 会话重置失败：客户端重连失败。"),
+                        )
+                    else:
+                        self._finish_void_future(request.future)
                     continue
 
                 if request.future.cancelled():
@@ -275,8 +290,10 @@ class AgentManager:
 
             if isinstance(request, _QueryRequest):
                 self._finish_query_future(request.future, error=error)
-            elif isinstance(request, _ShutdownRequest) and not request.future.done():
-                request.future.set_result(None)
+            elif isinstance(request, _ResetRequest):
+                self._finish_void_future(request.future, error=error)
+            elif isinstance(request, _ShutdownRequest):
+                self._finish_void_future(request.future)
 
     async def connect(self) -> None:
         loop = asyncio.get_running_loop()
@@ -369,11 +386,27 @@ class AgentManager:
             await queue.put(_ResetRequest(session_scope=scope, future=future))
 
         logger.info(
-            "Claude session reset: session_scope=%s previous_session_id=%s",
+            "Claude session reset queued: session_scope=%s previous_session_id=%s",
             scope,
             previous_session_id,
         )
-        await future
+        try:
+            async with asyncio.timeout(_RESET_TIMEOUT_SECONDS):
+                await asyncio.shield(future)
+        except TimeoutError as exc:
+            logger.warning(
+                "Claude session reset timeout: session_scope=%s previous_session_id=%s timeout_seconds=%s",
+                scope,
+                previous_session_id,
+                _RESET_TIMEOUT_SECONDS,
+            )
+            raise AgentManagerError("Claude 会话重置超时，请稍后重试。") from exc
+
+        logger.info(
+            "Claude session reset completed: session_scope=%s previous_session_id=%s",
+            scope,
+            previous_session_id,
+        )
 
     async def query(self, text: str, *, session_scope: str = "default") -> str:
         prompt = text.strip()
