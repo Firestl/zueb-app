@@ -22,6 +22,7 @@ class BotConfig:
     telegram_bot_token: str
     anthropic_api_key: str
     anthropic_base_url: str | None
+    anthropic_model: str | None
     bot_log_level: str
     owner_id: int
     nightly_check_enabled: bool
@@ -119,6 +120,7 @@ def load_config() -> BotConfig:
     telegram_bot_token = _must_get_env("TELEGRAM_BOT_TOKEN")
     anthropic_api_key = _must_get_env("ANTHROPIC_API_KEY")
     anthropic_base_url = _optional_get_env("ANTHROPIC_BASE_URL")
+    anthropic_model = _optional_get_env("ANTHROPIC_MODEL")
     bot_log_level = _get_log_level()
     owner_id_raw = _must_get_env("OWNER_ID")
     # 读取每晚考勤相关配置
@@ -138,6 +140,7 @@ def load_config() -> BotConfig:
         telegram_bot_token=telegram_bot_token,
         anthropic_api_key=anthropic_api_key,
         anthropic_base_url=anthropic_base_url,
+        anthropic_model=anthropic_model,
         bot_log_level=bot_log_level,
         owner_id=owner_id,
         nightly_check_enabled=nightly_check_enabled,

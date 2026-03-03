@@ -55,14 +55,14 @@ _Request = _QueryRequest | _ShutdownRequest
 class AgentManager:
     """为单个 Telegram 机器人拥有者管理一个持久的 ClaudeSDKClient 实例。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, model: str | None = None) -> None:
         self._lock = asyncio.Lock()
+        self._model = (model or "").strip() or None
         self._session_ids: dict[str, str] = {}
         self._request_queue: asyncio.Queue[_Request] | None = None
         self._worker_task: asyncio.Task[None] | None = None
 
-    @staticmethod
-    def _build_options() -> ClaudeAgentOptions:
+    def _build_options(self) -> ClaudeAgentOptions:
         """构建 SDK 配置项，初始连接和重连时复用。"""
         return ClaudeAgentOptions(
             system_prompt=SYSTEM_PROMPT,
@@ -71,6 +71,7 @@ class AgentManager:
             allowed_tools=["Skill", "Bash"],
             permission_mode="bypassPermissions",
             max_turns=10,
+            model=self._model,
         )
 
     async def _new_client(self) -> ClaudeSDKClient:

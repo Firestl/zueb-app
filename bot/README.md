@@ -151,7 +151,7 @@ bot/
 ```
 1. 加载配置 → load_config() 从 .env 读取 Token、API Key 等
 2. 配置日志 → 统一日志格式
-3. 设置环境变量 → Claude SDK 需要 ANTHROPIC_API_KEY 环境变量
+3. 设置环境变量 → Claude SDK 需要 ANTHROPIC_API_KEY（可选 ANTHROPIC_BASE_URL / ANTHROPIC_MODEL）
 4. 创建核心组件 → Bot、Dispatcher、AgentManager、Scheduler
 5. 注册中间件和路由 → 权限过滤 + 命令路由 + 聊天路由
 6. 启动轮询 → 开始从 Telegram 拉取消息
@@ -411,6 +411,7 @@ NightlyAttendanceScheduler._run_loop()
 | `ANTHROPIC_API_KEY` | ✅ | - | Anthropic Claude API Key |
 | `OWNER_ID` | ✅ | - | 你的 Telegram 数字用户 ID |
 | `ANTHROPIC_BASE_URL` | ❌ | Anthropic 官方 | 第三方 API 网关地址 |
+| `ANTHROPIC_MODEL` | ❌ | SDK 默认模型 | 传递给 Claude Agent SDK 的模型名 |
 | `BOT_LOG_LEVEL` | ❌ | `INFO` | 日志级别 |
 | `NIGHTLY_CHECK_ENABLED` | ❌ | `true` | 是否启用每晚考勤检查 |
 | `NIGHTLY_CHECK_TIME` | ❌ | `21:30` | 检查执行时间（HH:MM） |

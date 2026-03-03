@@ -63,11 +63,15 @@ async def run() -> None:
         logger.info("Using custom Anthropic base URL")
     else:
         logger.info("Using default Anthropic base URL")
+    if config.anthropic_model:
+        logger.info("Using custom Claude model: %s", config.anthropic_model)
+    else:
+        logger.info("Using default Claude model")
 
     # 3. 创建核心组件
     bot = Bot(token=config.telegram_bot_token)       # Telegram Bot 实例
     dp = Dispatcher()                                 # 消息分发器
-    agent_manager = AgentManager()                    # Claude Agent 管理器
+    agent_manager = AgentManager(model=config.anthropic_model)  # Claude Agent 管理器
     # 每晚定时考勤检查调度器
     scheduler = NightlyAttendanceScheduler(
         bot=bot,

@@ -141,6 +141,7 @@ uv run python -m cli --help
 TELEGRAM_BOT_TOKEN=你的TelegramBotToken
 ANTHROPIC_API_KEY=你的AnthropicKey
 ANTHROPIC_BASE_URL=https://your-third-party-gateway.example.com
+ANTHROPIC_MODEL=claude-sonnet-4-5
 BOT_LOG_LEVEL=INFO
 OWNER_ID=你的Telegram数字用户ID
 NIGHTLY_CHECK_ENABLED=true
@@ -151,6 +152,7 @@ NIGHTLY_CHECK_PROMPT=查看是否打卡
 ```
 
 `ANTHROPIC_BASE_URL` 可选；配置后会使用第三方网关而非 Anthropic 默认地址。
+`ANTHROPIC_MODEL` 可选；配置后会将该模型名传给 Claude Agent SDK（不填使用 SDK 默认模型）。
 `BOT_LOG_LEVEL` 可选；支持 `DEBUG/INFO/WARNING/ERROR/CRITICAL`，默认 `INFO`。
 夜间自动检查配置可选，默认每日 `21:30`（`Asia/Shanghai`）执行一次。
 
