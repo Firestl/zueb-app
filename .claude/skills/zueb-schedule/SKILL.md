@@ -28,30 +28,11 @@ Run the helper script to query the course schedule:
 - If the user asks to list semesters, use `--list`.
 - `--year` and `--term` must be used together.
 
-## JSON Fields
-
-- `schedule`: 原始教务课表数据（兼容旧逻辑）。
-- `schedule_with_staggered_time`: 增强后的课表数据。`week1-7` 中每个课程会新增：
-  - `staggered_batch`: 错峰批次（1~4）
-  - `staggered_batch_label`: 批次名称（如“第二批次”）
-  - `staggered_location_keyword`: 匹配到的地点关键字
-  - `staggered_period_times`: 节次明细时间数组
-  - `staggered_time_range`: 该课程整体时间段（如 `10:10-11:50`）
-  - `staggered_time_available`: 是否成功匹配
-
 ## Presenting Results
 
-1. 优先使用 `schedule_with_staggered_time`，按天分组展示课程。
-2. 每门课至少展示：课程名、地点、节次、具体上课时间（`staggered_time_range`）。
-3. 若 `staggered_time_available=true`，同时可补充批次（`staggered_batch_label`）。
-4. 若 `staggered_time_available=false`，说明“地点未匹配错峰表，暂无法给出精确时间”，并继续展示原节次。
-5. 忽略无课日期。
+Parse the JSON output. The schedule data contains:
+- `week1-7` keys: arrays of course entries for Monday through Sunday
+- Each course has: `kcmc` (name), `skdd` (room), `rkjs` (teacher), `jcxx` (periods), `skzs` (weeks)
+- `zc`: current week number, `xn`: year, `xq`: term
 
-## Location-To-Batch Rules
-
-- 第一批次：`1#实验楼`、`2#教学楼`、`3#行政楼`、`4#实验楼`、`工程训练中心`
-- 第二批次：`5#实验楼`、`6#教学楼`、`13#教学楼`
-- 第三批次：`7#教学楼`、`8#教学楼`
-- 第四批次：`10#教学楼`、`11#教学楼`、`12#教学楼`
-
-说明：第 1/2/5/6/7/8/9/10 小节各批次时间一致；核心差异在第 3/4 小节，必须按批次使用增强字段中的精确时间。
+Present the schedule in a readable format grouped by day. Omit days with no courses.

@@ -102,7 +102,6 @@ def schedule(
     """Query course schedule."""
     from cli.auth.token import load_session
     from cli.schedule.service import ScheduleError, get_available_semesters, get_schedule
-    from bot.agent.schedule_time import enrich_schedule_with_staggered_times
 
     session = load_session()
     if not session or not session.get("id_token"):
@@ -118,13 +117,7 @@ def schedule(
             return
 
         data = get_schedule(id_token, semester, year, term, week)
-        _json_out(
-            {
-                "ok": True,
-                "schedule": data,
-                "schedule_with_staggered_time": enrich_schedule_with_staggered_times(data),
-            }
-        )
+        _json_out({"ok": True, "schedule": data})
     except ScheduleError as exc:
         _error_out(str(exc))
     except Exception as exc:

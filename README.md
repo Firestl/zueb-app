@@ -182,17 +182,6 @@ NIGHTLY_CHECK_PROMPT=查看是否打卡
 .venv/bin/python bot/agent/helper.py attendance
 ```
 
-### 课表错峰时间（Skills）
-
-- `bot/agent/helper.py schedule` 在保留原始 `schedule` 字段的同时，会额外返回 `schedule_with_staggered_time`。
-- 增强字段会根据 `skdd`（上课地点）匹配批次，并给出 `staggered_time_range`（具体上课时间）与 `staggered_period_times`（逐节时间）。
-- 地点批次映射：
-  - 第一批次：`1#实验楼`、`2#教学楼`、`3#行政楼`、`4#实验楼`、`工程训练中心`
-  - 第二批次：`5#实验楼`、`6#教学楼`、`13#教学楼`
-  - 第三批次：`7#教学楼`、`8#教学楼`
-  - 第四批次：`10#教学楼`、`11#教学楼`、`12#教学楼`
-- 第三、第四小节为错峰核心差异时段，展示课表时应优先使用增强字段中的精确时间。
-
 ## 每晚自动打卡检查推送
 
 - 机器人进程启动后会在后台调度每日任务，不需要额外 `cron`。
