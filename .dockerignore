@@ -1,0 +1,12 @@
+.venv/
+.env
+.git/
+.github/
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+GradleProject/
+CapturePacket/
+tests/
+pyrightconfig.json
