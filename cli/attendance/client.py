@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 HTTP client for the WebHR attendance system (rsxt1.zueb.edu.cn/webhr/).
 
@@ -13,10 +15,16 @@ along with the current Unix timestamp used in the signed payload.
 
 import json
 import logging
+from types import TracebackType
 
 import httpx
 
+from cli.attendance.parsers import (
+    parse_webhr_card_info_response,
+    parse_webhr_token_response,
+)
 from cli.config import DEFAULT_HEADERS, WEBHR_BASE_URL
+from cli.types import WebHRResponse
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +33,7 @@ class WebHRError(Exception):
     pass
 
 
-def _parse_json_response(response: httpx.Response, action: str) -> dict:
+def _parse_json_response(response: httpx.Response, action: str) -> object:
     """Raise a descriptive WebHRError on HTTP errors or non-JSON bodies.
 
     Args:
@@ -57,7 +65,7 @@ class WebHRClient:
             data  = client.get_kqcard_info(token, ...)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._client = httpx.Client(
             headers=DEFAULT_HEADERS,
             follow_redirects=True,
@@ -114,11 +122,11 @@ class WebHRClient:
             json=payload,
         )
         logger.debug("appLoginsso response status=%d", response.status_code)
-        data = _parse_json_response(response, "appLoginsso")
-
-        token = ((data.get("data") or {}).get("data") or {}).get("token")
-        if not token:
-            raise WebHRError("appLoginsso response missing data.data.token")
+        payload_data = _parse_json_response(response, "appLoginsso")
+        try:
+            token = parse_webhr_token_response(payload_data)
+        except ValueError as exc:
+            raise WebHRError(f"appLoginsso returned invalid payload: {exc}") from exc
         logger.debug("Obtained webhrtoken (len=%d)", len(token))
         return token
 
@@ -127,7 +135,7 @@ class WebHRClient:
         webhrtoken: str,
         signature: str,
         timestamp: int,
-    ) -> dict:
+    ) -> WebHRResponse:
         """Fetch today's clock-in / clock-out card information.
 
         Args:
@@ -165,13 +173,22 @@ class WebHRClient:
             json=payload,
         )
         logger.debug("getKqCardInfo response status=%d", response.status_code)
-        return _parse_json_response(response, "getKqCardInfo")
+        payload_data = _parse_json_response(response, "getKqCardInfo")
+        try:
+            return parse_webhr_card_info_response(payload_data)
+        except ValueError as exc:
+            raise WebHRError(f"getKqCardInfo returned invalid payload: {exc}") from exc
 
-    def close(self):
+    def close(self) -> None:
         self._client.close()
 
-    def __enter__(self):
+    def __enter__(self) -> WebHRClient:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()
