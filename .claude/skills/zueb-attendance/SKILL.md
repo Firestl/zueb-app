@@ -1,6 +1,6 @@
 ---
 name: zueb-attendance
-description: 查询今日打卡考勤状态。当用户问打卡、考勤、签到时触发。
+description: 查询今日打卡考勤状态。当用户问打卡、考勤、签到、上班卡、下班卡、出勤、是否打卡时触发。
 ---
 
 # ZUEB Attendance

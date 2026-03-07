@@ -1,9 +1,9 @@
 ---
-name: zueb-datetime
-description: 查询当前日期、时间、星期几。当用户问今天几号、今天星期几、现在几点、当前日期时间时触发。必须使用工具结果，不可自行推断星期。
+name: datetime
+description: 查询当前日期、时间、星期几。当用户问今天几号、几月几号、今天星期几、现在几点、当前日期时间时触发。必须使用工具结果，不可自行推断星期。
 ---
 
-# ZUEB Datetime
+# Datetime
 
 Run the helper script to query deterministic date/time:
 

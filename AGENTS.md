@@ -35,7 +35,8 @@ To add a new capability:
 1. Add service logic in `cli/` (new module or extend existing)
 2. Add a subcommand in `bot/agent/helper.py` (JSON bridge)
 3. Create a Skill file at `.claude/skills/<name>/SKILL.md`
-4. Bot auto-discovers new skills — no handler changes needed
+4. **Update `bot/agent/prompts.py`** — add the new skill to the system prompt's skill list
+5. Bot auto-discovers new skills — no handler changes needed
 
 ## ZUEB Campus Module
 
