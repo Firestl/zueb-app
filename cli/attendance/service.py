@@ -19,6 +19,7 @@ import logging
 from cli.attendance.client import WebHRClient, WebHRError
 from cli.attendance.sign import SignatureError, generate_signature
 from cli.attendance.sso import SSOError, get_sso_credentials
+from cli.types import AttendanceStatus, CardField
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class AttendanceError(Exception):
     pass
 
 
-def _extract_card_time(value) -> str:
+def _extract_card_time(value: CardField | None) -> str:
     """Extract the time string from a card field list.
 
     The server returns card fields as a list: [label, "HH:MM"] when punched,
@@ -37,10 +38,7 @@ def _extract_card_time(value) -> str:
         return ""
     if len(value) < 2:
         return ""
-    card_time = value[1]
-    if not isinstance(card_time, str):
-        return ""
-    return card_time.strip()
+    return value[1].strip()
 
 
 def _is_card_done(card_time: str) -> bool:
@@ -48,7 +46,7 @@ def _is_card_done(card_time: str) -> bool:
     return bool(card_time) and card_time != "无"
 
 
-def get_attendance_status(id_token: str) -> dict:
+def get_attendance_status(id_token: str) -> AttendanceStatus:
     """Fetch today's clock-in and clock-out status for the authenticated user.
 
     Args:

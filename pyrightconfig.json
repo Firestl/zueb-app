@@ -1,0 +1,9 @@
+{
+  "include": ["bot", "cli"],
+  "exclude": [".venv", "GradleProject"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["."],
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": false
+}

@@ -8,13 +8,37 @@ from cli.auth.login import LoginError, MFARequiredError, login
 from cli.auth.token import clear_session, load_session
 from cli.formatters import print_schedule, print_semester_list
 from cli.schedule.service import ScheduleError, get_available_semesters, get_schedule
+from cli.types import SessionData, UserInfo
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 
-def _require_session() -> dict:
+def _print_user_summary(user: UserInfo) -> None:
+    """Print optional user profile fields returned by login."""
+    name = user.get("name") or user.get("realName") or user.get("username") or ""
+    if name:
+        click.echo(f"Welcome, {name}")
+
+    mobile = user.get("mobile")
+    if mobile:
+        click.echo(f"  mobile: {mobile}")
+
+    email = user.get("email")
+    if email:
+        click.echo(f"  email: {email}")
+
+    org_name = user.get("orgName")
+    if org_name:
+        click.echo(f"  orgName: {org_name}")
+
+    user_type = user.get("userType")
+    if user_type:
+        click.echo(f"  userType: {user_type}")
+
+
+def _require_session() -> SessionData:
     """Return current session or exit with an error message."""
     logger.debug("Loading saved session...")
     session = load_session()
@@ -32,7 +56,7 @@ def _require_session() -> dict:
 
 @click.group()
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose debug logging")
-def cli(verbose):
+def cli(verbose: bool) -> None:
     """ZUEB CLI — command-line interface for Zhengzhou University of Economics and Business."""
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -58,10 +82,10 @@ def cli(verbose):
     default=None,
     help="Password (prompted if omitted)",
 )
-def login_cmd(username, password):
+def login_cmd(username: str, password: str | None) -> None:
     """Login with employee/student ID and password."""
     if password is None:
-        password = click.prompt("Password", hide_input=True)
+        password = str(click.prompt("Password", hide_input=True))
 
     logger.info("Attempting login for user=%s", username)
     click.echo("Logging in...")
@@ -84,20 +108,13 @@ def login_cmd(username, password):
     if token:
         click.echo(f"Token: {token[:20]}...{token[-10:]}")
 
-    user = result.get("user") or {}
+    user = result["user"]
     if user:
-        name = user.get("name") or user.get("realName") or user.get("username") or ""
-        if name:
-            click.echo(f"Welcome, {name}")
-        # Print any extra user fields that are available
-        for key in ("mobile", "email", "orgName", "userType"):
-            val = user.get(key)
-            if val:
-                click.echo(f"  {key}: {val}")
+        _print_user_summary(user)
 
 
 @cli.command()
-def status():
+def status() -> None:
     """Show current session information."""
     logger.debug("Checking session status")
     session = load_session()
@@ -112,7 +129,7 @@ def status():
 
 
 @cli.command()
-def logout():
+def logout() -> None:
     """Clear saved session."""
     logger.debug("Logout requested")
     session = load_session()
@@ -125,7 +142,7 @@ def logout():
 
 
 @cli.command()
-def attendance():
+def attendance() -> None:
     """Show today's attendance card status."""
     session = _require_session()
     id_token = session["id_token"]
@@ -172,7 +189,13 @@ def attendance():
 @click.option(
     "--list-semesters", is_flag=True, help="List selectable semesters and exit"
 )
-def schedule(semester_code, year, term, week, list_semesters):
+def schedule(
+    semester_code: str | None,
+    year: int | None,
+    term: str | None,
+    week: int | None,
+    list_semesters: bool,
+) -> None:
     """Show course schedule (supports semester/year-term/week selectors)."""
     session = _require_session()
     id_token = session["id_token"]

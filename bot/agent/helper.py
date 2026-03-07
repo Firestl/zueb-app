@@ -7,9 +7,11 @@ Claude 通过 SKILL.md 中的 Bash 指令调用这些子命令。
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import json
 import sys
+from typing import NoReturn
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import click
@@ -17,13 +19,50 @@ import click
 # 将项目根目录加入 sys.path，确保直接执行时也能正确导入 cli/ 模块
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
+from cli.types import UserInfo
 
-def _json_out(data: dict) -> None:
+
+def _sanitize_user_info(user: UserInfo) -> UserInfo:
+    """Return a JSON-safe user dict with sensitive fields removed."""
+    safe_user: UserInfo = {}
+
+    name = user.get("name")
+    if name:
+        safe_user["name"] = name
+
+    real_name = user.get("realName")
+    if real_name:
+        safe_user["realName"] = real_name
+
+    username = user.get("username")
+    if username:
+        safe_user["username"] = username
+
+    mobile = user.get("mobile")
+    if mobile:
+        safe_user["mobile"] = mobile
+
+    email = user.get("email")
+    if email:
+        safe_user["email"] = email
+
+    org_name = user.get("orgName")
+    if org_name:
+        safe_user["orgName"] = org_name
+
+    user_type = user.get("userType")
+    if user_type:
+        safe_user["userType"] = user_type
+
+    return safe_user
+
+
+def _json_out(data: Mapping[str, object]) -> None:
     """将字典序列化为 JSON 输出到 stdout。"""
     click.echo(json.dumps(data, ensure_ascii=False))
 
 
-def _error_out(message: str) -> None:
+def _error_out(message: str) -> NoReturn:
     """输出错误 JSON 并以非零状态码退出。"""
     _json_out({"ok": False, "error": message})
     sys.exit(1)
@@ -51,12 +90,7 @@ def login(username: str, password: str) -> None:
         _error_out(f"登录异常：{exc}")
 
     # 过滤敏感字段（密码、token 等），防止通过 JSON 输出泄露
-    user = result.get("user") if isinstance(result.get("user"), dict) else {}
-    safe_user = {
-        k: v
-        for k, v in user.items()
-        if k.lower() not in {"password", "idtoken", "token", "authorization"}
-    }
+    safe_user = _sanitize_user_info(result["user"])
     _json_out({"ok": True, "message": "登录成功", "username": username, "user": safe_user})
 
 
@@ -184,6 +218,32 @@ def datetime_info(timezone_name: str) -> None:
         "weekday_cn": weekday_cn,
         "weekday_en": now.strftime("%A"),
     })
+
+
+@cli.command()
+def wol() -> None:
+    """Wake desktop PC via Wake-on-LAN through OpenWrt router."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["ssh", "openwrt", "etherwake", "-i", "br-lan", "10:FF:E0:AC:62:5D"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        _error_out("SSH 连接超时，请检查路由器是否可达。")
+    except FileNotFoundError:
+        _error_out("未找到 ssh 命令。")
+    except Exception as exc:
+        _error_out(f"执行异常：{exc}")
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        _error_out(f"唤醒失败：{stderr or '未知错误'}")
+
+    _json_out({"ok": True, "message": "魔术包已发送，台式机正在启动。"})
 
 
 if __name__ == "__main__":

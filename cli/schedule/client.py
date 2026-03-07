@@ -1,14 +1,18 @@
 """HTTP client for JWXT (教务系统) API."""
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import math
 import re
 import time
-from typing import Any
+from types import TracebackType
+from typing import cast
 
 import httpx
 
+from cli.types import JSONObject, ScheduleData, SemesterItem
 from cli.config import JWXT_BASE_URL
 
 logger = logging.getLogger(__name__)
@@ -27,7 +31,12 @@ class JWXTClient:
     _STEP_XNXQ = "xnxq"
     _STEP_DETAIL = "detail"
 
-    def __init__(self, jsessionid: str, login_id: str = "", user_type: str = ""):
+    def __init__(
+        self,
+        jsessionid: str,
+        login_id: str = "",
+        user_type: str = "",
+    ) -> None:
         """
         Initialize JWXT client with session cookie.
 
@@ -62,10 +71,15 @@ class JWXTClient:
         """Close underlying HTTP client."""
         self._client.close()
 
-    def __enter__(self) -> "JWXTClient":
+    def __enter__(self) -> JWXTClient:
         return self
 
-    def __exit__(self, *args) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()
 
     def _bootstrap_context(self) -> None:
@@ -133,7 +147,7 @@ class JWXTClient:
         if value < 0:
             return "-" + JWXTClient._to_base36(-value)
         digits = "0123456789abcdefghijklmnopqrstuvwxyz"
-        out = []
+        out: list[str] = []
         n = value
         while n > 0:
             out.append(digits[n % 36])
@@ -225,7 +239,7 @@ class JWXTClient:
             encoded += ("000000" + base36)[-6:]
         return encoded
 
-    def _build_plain_payload(self, step: str, payload: dict[str, Any]) -> str:
+    def _build_plain_payload(self, step: str, payload: dict[str, str]) -> str:
         """
         Build plaintext query string exactly like JWXT H5 request interceptor.
 
@@ -239,7 +253,7 @@ class JWXTClient:
         Returns:
             Plain `k=v&...` string used to generate both `param` and `param2`.
         """
-        data: dict[str, Any] = {
+        data: dict[str, str] = {
             "action": "jw_apply",
             "type": self._REQUEST_TYPE,
             "step": step,
@@ -265,7 +279,9 @@ class JWXTClient:
         parts = [f"{k}={v}" for k, v in data.items()]
         return "&".join(parts)
 
-    def _jw_apply_get(self, endpoint: str, step: str, payload: dict[str, Any]) -> dict:
+    def _jw_apply_get(
+        self, endpoint: str, step: str, payload: dict[str, str]
+    ) -> JSONObject:
         """Send one jw_apply GET request and return decoded JSON payload.
 
         Args:
@@ -296,7 +312,7 @@ class JWXTClient:
         resp.raise_for_status()
         return resp.json()
 
-    def get_semester_items(self) -> list[dict[str, Any]]:
+    def get_semester_items(self) -> list[SemesterItem]:
         """
         Return raw semester list items from getxnxq_xl.
 
@@ -312,7 +328,11 @@ class JWXTClient:
             raise JWXTClientError(
                 "unexpected semester list response: xnxq is not a list"
             )
-        return [item for item in items if isinstance(item, dict)]
+        semester_items: list[SemesterItem] = []
+        for item in items:
+            if isinstance(item, dict):
+                semester_items.append(cast(SemesterItem, item))
+        return semester_items
 
     def resolve_semester_code(self, year: int, term: int) -> str:
         """
@@ -349,7 +369,7 @@ class JWXTClient:
             f"cannot resolve semester code for year={year}, term={term}"
         )
 
-    def get_semester_list(self) -> dict:
+    def get_semester_list(self) -> JSONObject:
         """
         Call /wap/getxnxq_xl.action (step=xnxq) with jw_apply signing/encryption.
 
@@ -364,7 +384,7 @@ class JWXTClient:
 
     def get_course_schedule(
         self, semester_code: str | None = None, week: str | None = None
-    ) -> dict:
+    ) -> ScheduleData:
         """
         Get course schedule for a semester (optionally for a specific week).
 
@@ -402,6 +422,6 @@ class JWXTClient:
             week = "" if semester_code == current_dm else "1"
 
         payload = {"xnxq": semester_code, "week": week}
-        return self._jw_apply_get(
+        return cast(ScheduleData, self._jw_apply_get(
             "/wap/mycourseschedule.action", self._STEP_DETAIL, payload
-        )
+        ))

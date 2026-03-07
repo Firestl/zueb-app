@@ -13,6 +13,7 @@ from bot.agent.client import AgentManager, AgentManagerError
 from bot.handlers.utils import chat_session_scope
 from cli.auth.login import LoginError, MFARequiredError, login
 from cli.auth.token import clear_session, load_session
+from cli.types import UserInfo
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,11 @@ def _mask_username(username: str) -> str:
     if len(value) <= 2:
         return "*" * len(value)
     return f"{value[:2]}***{value[-2:]}"
+
+
+def _user_display_name(user: UserInfo, fallback: str) -> str:
+    """Choose a human-friendly display name from login result."""
+    return user.get("name") or user.get("realName") or user.get("username") or fallback
 
 
 def create_commands_router(agent_manager: AgentManager) -> Router:
@@ -101,13 +107,8 @@ def create_commands_router(agent_manager: AgentManager) -> Router:
             result = await asyncio.to_thread(login, username, password)
 
             # 从登录结果中提取用于显示的用户姓名
-            user = result.get("user") if isinstance(result.get("user"), dict) else {}
-            display_name = (
-                user.get("name")
-                or user.get("realName")
-                or user.get("username")
-                or username
-            )
+            user = result["user"]
+            display_name = _user_display_name(user, username)
             logger.info(
                 "Command /login success: user_id=%s chat_id=%s username=%s",
                 user_id,
