@@ -3,7 +3,7 @@ import logging
 import click
 from dotenv import load_dotenv
 
-from cli.attendance.service import AttendanceError, get_attendance_status
+from cli.attendance.service import AttendanceError, get_attendance_status, punch_attendance
 from cli.auth.login import LoginError, MFARequiredError, login
 from cli.auth.token import clear_session, load_session
 from cli.formatters import print_schedule, print_semester_list
@@ -165,6 +165,54 @@ def attendance() -> None:
     click.echo("Attendance Status:")
     click.echo(f"  上班卡 (Clock-in):  {sbk_time}  {sbk_mark}")
     click.echo(f"  下班卡 (Clock-out): {xbk_time}  {xbk_mark}")
+
+
+@cli.command(name="attendance-punch")
+@click.option(
+    "--mode",
+    type=click.Choice(["auto", "sbk", "xbk"]),
+    default="auto",
+    show_default=True,
+    help="Punch mode: auto / sbk / xbk",
+)
+@click.option(
+    "--xy",
+    default=None,
+    help="Attendance coordinates in 'lng,lat' format (defaults to ZUEB_ATTENDANCE_DEFAULT_XY)",
+)
+@click.option("--yes", is_flag=True, help="Submit punch without interactive confirmation")
+def attendance_punch(mode: str, xy: str | None, yes: bool) -> None:
+    """Submit today's attendance punch."""
+    session = _require_session()
+    id_token = session["id_token"]
+
+    if not yes:
+        coordinate_hint = xy or "ZUEB_ATTENDANCE_DEFAULT_XY"
+        confirmed = click.confirm(
+            f"Submit attendance punch now? mode={mode}, xy={coordinate_hint}",
+            default=False,
+        )
+        if not confirmed:
+            click.echo("Cancelled.")
+            return
+
+    logger.info("Submitting attendance punch mode=%s", mode)
+    click.echo("Submitting attendance punch...")
+    try:
+        result = punch_attendance(id_token, mode=mode, xy=xy)
+    except AttendanceError as e:
+        logger.error("Attendance punch failed: %s", e)
+        click.echo(f"Attendance punch failed: {e}", err=True)
+        raise SystemExit(1)
+
+    status = result["attendance_before"]
+    sbk_time = status.get("sbk_time") or "--:--"
+    xbk_time = status.get("xbk_time") or "--:--"
+    click.echo(result["message"])
+    click.echo(f"  Requested mode: {result['mode_requested']}")
+    click.echo(f"  Executed mode:  {result.get('mode_executed') or '-'}")
+    click.echo(f"  上班卡状态:      {sbk_time}  {'✓' if status.get('sbk_done') else '✗'}")
+    click.echo(f"  下班卡状态:      {xbk_time}  {'✓' if status.get('xbk_done') else '✗'}")
 
 
 @cli.command()

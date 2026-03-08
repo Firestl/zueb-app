@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 JSONScalar = str | int | float | bool | None
@@ -45,6 +45,19 @@ class AttendanceStatus(TypedDict):
     sbk_done: bool
     xbk_done: bool
     all_done: bool
+
+
+AttendancePunchMode = Literal["auto", "sbk", "xbk"]
+AttendanceResolvedMode = Literal["sbk", "xbk"]
+
+
+class AttendancePunchResult(TypedDict):
+    executed: bool
+    mode_requested: AttendancePunchMode
+    mode_executed: AttendanceResolvedMode | None
+    message: str
+    attendance_before: AttendanceStatus
+    response: JSONObject | None
 
 
 class SemesterItem(TypedDict, total=False):

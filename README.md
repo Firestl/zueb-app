@@ -1,13 +1,14 @@
 # ZUEB CLI
 
-学院相关系统命令行工具（当前实现：登录、会话状态、考勤查询、课表查询）。
+学院相关系统命令行工具（当前实现：登录、会话状态、考勤查询、执行打卡、课表查询）。
 
 ## 已实现功能
 
 - `login`：账号密码登录，保存会话。
 - `status`：查看当前会话信息。
 - `logout`：清除本地会话。
-- `attendance`：查询当日上下班打卡状态（只读查询，不打卡）。
+- `attendance`：查询当日上下班打卡状态。
+- `attendance-punch`：提交上班卡/下班卡，支持自动判断。
 - `schedule`：查询课表，支持当前学期/指定学期代码/指定学年学期。
 
 ## 运行环境
@@ -34,6 +35,7 @@ cp .env.example .env
 ```env
 ZUEB_USERNAME=你的工号
 ZUEB_PASSWORD=你的密码
+ZUEB_ATTENDANCE_DEFAULT_XY=113.719755,34.615436
 ```
 
 ## 快速开始
@@ -56,13 +58,19 @@ uv run python -m cli status
 uv run python -m cli attendance
 ```
 
-4. 查询课表（当前学期）：
+4. 提交打卡：
+
+```bash
+uv run python -m cli attendance-punch --mode auto --yes
+```
+
+5. 查询课表（当前学期）：
 
 ```bash
 uv run python -m cli schedule
 ```
 
-5. 退出登录：
+6. 退出登录：
 
 ```bash
 uv run python -m cli logout
@@ -131,6 +139,7 @@ uv run python -m cli --help
 - `status`
 - `logout`
 - `attendance`
+- `attendance-punch`
 - `schedule`
 
 ## Telegram Bot / Skills 使用方法
@@ -167,6 +176,7 @@ NIGHTLY_CHECK_PROMPT=查看是否打卡
 - `/login <学号或工号> <密码>`
 - `查看课表`、`下周有什么课`、`打卡了吗`
 - `/logout`
+- `帮我打卡`、`现在打卡`（会先确认再提交）
 
 说明：
 
@@ -180,6 +190,7 @@ NIGHTLY_CHECK_PROMPT=查看是否打卡
 .venv/bin/python bot/agent/helper.py status
 .venv/bin/python bot/agent/helper.py schedule --list
 .venv/bin/python bot/agent/helper.py attendance
+.venv/bin/python bot/agent/helper.py attendance-punch --mode auto --confirm yes
 ```
 
 ### 课表具体上课时间（Skill 推理）
@@ -188,6 +199,15 @@ NIGHTLY_CHECK_PROMPT=查看是否打卡
 - 机器人通过 `.claude/skills/zueb-schedule/SKILL.md` 内的 markdown 错峰时间表推理具体上课时间。
 - 推理时基于 `skdd`（上课地点）判定批次，再基于 `jcxx`（节次）映射到具体时段。
 - 若地点无法匹配批次，机器人会明确提示“暂无法确认精确时间”，并继续展示原始节次信息。
+
+## 打卡提交说明
+
+- 默认坐标来自环境变量 `ZUEB_ATTENDANCE_DEFAULT_XY`，格式为 `经度,纬度`。
+- CLI 可用 `--xy` 临时覆盖默认坐标；helper/skill 也支持同名参数。
+- CLI 执行真实打卡前默认会二次确认；加 `--yes` 才会直接提交。
+- Helper 执行真实打卡前必须显式传 `--confirm yes`。
+- 自动模式会先查询状态：若上班卡未打则提交 `sbk`，否则若下班卡未打则提交 `xbk`。
+- 本地时间窗限制与旧实现保持一致：`sbk` 仅允许 `08:00` 前，`xbk` 仅允许 `16:30` 后。
 
 ## 每晚自动打卡检查推送
 

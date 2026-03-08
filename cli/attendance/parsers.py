@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cli.types import CardField, WebHRCardInfo, WebHRDataEnvelope, WebHRResponse
+from cli.types import CardField, JSONObject, WebHRCardInfo, WebHRDataEnvelope, WebHRResponse
 
 
 def _expect_object(value: object, context: str) -> dict[str, object]:
@@ -53,3 +53,8 @@ def parse_webhr_card_info_response(payload: object) -> WebHRResponse:
 
     envelope: WebHRDataEnvelope = {"data": card_info}
     return {"data": envelope}
+
+
+def parse_webhr_save_response(payload: object) -> JSONObject:
+    source = _expect_object(payload, "saveKqCard response")
+    return {str(key): value for key, value in source.items()}

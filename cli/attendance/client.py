@@ -21,10 +21,11 @@ import httpx
 
 from cli.attendance.parsers import (
     parse_webhr_card_info_response,
+    parse_webhr_save_response,
     parse_webhr_token_response,
 )
 from cli.config import DEFAULT_HEADERS, WEBHR_BASE_URL
-from cli.types import WebHRResponse
+from cli.types import JSONObject, WebHRResponse
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,62 @@ class WebHRClient:
             return parse_webhr_card_info_response(payload_data)
         except ValueError as exc:
             raise WebHRError(f"getKqCardInfo returned invalid payload: {exc}") from exc
+
+    def save_kqcard(
+        self,
+        webhrtoken: str,
+        signature: str,
+        timestamp: int,
+        xy: str,
+        sbflag: str,
+        *,
+        flag: str = "true",
+    ) -> JSONObject:
+        """Submit an attendance punch request.
+
+        Args:
+            webhrtoken: Session token from `get_webhrtoken`.
+            signature:  Base64 RSA-SHA256 signature (fresh, third call).
+            timestamp:  Unix epoch seconds used in the signature payload.
+            xy:         Coordinate string formatted as "lng,lat".
+            sbflag:     Punch type, either "sbk" or "xbk".
+            flag:       Fixed boolean-like string expected by the API.
+
+        Returns:
+            Raw JSON response from `saveKqCard`.
+
+        Raises:
+            WebHRError: If the request fails or the response is not valid JSON.
+        """
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "*/*",
+            "Origin": "https://rsxt1.zueb.edu.cn",
+            "Referer": "https://rsxt1.zueb.edu.cn/webhrApp/",
+            "cookie": f"token={webhrtoken}",
+        }
+
+        payload = {
+            "flag": flag,
+            "sbflag": sbflag,
+            "signature": signature,
+            "timestamp": timestamp,
+            "xy": xy,
+            "webhrtoken": webhrtoken,
+        }
+
+        logger.info("POST saveKqCard sbflag=%s", sbflag)
+        response = self._client.post(
+            WEBHR_BASE_URL + "AppKqCard/saveKqCard",
+            headers=headers,
+            json=payload,
+        )
+        logger.debug("saveKqCard response status=%d", response.status_code)
+        payload_data = _parse_json_response(response, "saveKqCard")
+        try:
+            return parse_webhr_save_response(payload_data)
+        except ValueError as exc:
+            raise WebHRError(f"saveKqCard returned invalid payload: {exc}") from exc
 
     def close(self) -> None:
         self._client.close()

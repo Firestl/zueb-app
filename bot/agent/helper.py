@@ -15,11 +15,14 @@ from typing import NoReturn
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import click
+from dotenv import load_dotenv
 
 # 将项目根目录加入 sys.path，确保直接执行时也能正确导入 cli/ 模块
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 
 from cli.types import UserInfo
+
+load_dotenv()
 
 
 def _sanitize_user_info(user: UserInfo) -> UserInfo:
@@ -179,6 +182,39 @@ def attendance() -> None:
         _error_out(str(exc))
     except Exception as exc:
         _error_out(f"考勤查询异常：{exc}")
+
+
+@cli.command("attendance-punch")
+@click.option(
+    "--mode",
+    type=click.Choice(["auto", "sbk", "xbk"]),
+    default="auto",
+    show_default=True,
+    help="Punch mode: auto / sbk / xbk",
+)
+@click.option("--xy", default=None, help="Attendance coordinates in 'lng,lat' format")
+@click.option("--confirm", default=None, help='Type "yes" to confirm actual punch submission')
+def attendance_punch(mode: str, xy: str | None, confirm: str | None) -> None:
+    """Submit today's attendance punch."""
+    from cli.auth.token import load_session
+    from cli.attendance.service import AttendanceError, punch_attendance
+
+    if confirm != "yes":
+        _error_out('执行打卡前必须显式传入 --confirm yes。')
+
+    session = load_session()
+    if not session or not session.get("id_token"):
+        _error_out("当前未登录，请先执行 /login <学号或工号> <密码>。")
+
+    id_token = session["id_token"]
+
+    try:
+        data = punch_attendance(id_token, mode=mode, xy=xy)
+        _json_out({"ok": True, **data})
+    except AttendanceError as exc:
+        _error_out(str(exc))
+    except Exception as exc:
+        _error_out(f"打卡提交异常：{exc}")
 
 
 @cli.command("datetime")

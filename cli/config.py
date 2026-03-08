@@ -41,6 +41,9 @@ CAS_LOGIN_URL = "https://cas.zueb.edu.cn/cas/login"
 # Source: build.gradle line 10 (applicationId).
 APP_ID = "com.supwisdom.zueb"
 
+# Default attendance coordinate env var name. Value format: "lng,lat".
+ATTENDANCE_DEFAULT_XY_ENV = "ZUEB_ATTENDANCE_DEFAULT_XY"
+
 # ── Default HTTP headers ──────────────────────────────────────────────────────
 # Mimics a mobile Chrome browser to avoid server-side bot detection.
 DEFAULT_HEADERS = {
