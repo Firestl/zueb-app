@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import logging
 import os
-import pathlib
-import sys
 from typing import Any
 
 from aiogram import BaseMiddleware, Bot, Dispatcher
@@ -87,30 +85,20 @@ async def run() -> None:
         prompt=config.nightly_check_prompt,           # 发送给 Agent 的考勤提示词
     )
 
-    # 3b. Tool calling capability check — fast-fail if the API endpoint is broken
+    # 3b. Tool calling capability check — warn if the API endpoint is broken
     logger.info("Running tool calling capability check")
-    if not await check_tool_calling(model=config.anthropic_model):
+    if not await check_tool_calling():
         msg = (
-            "Bot 启动失败：API 端点不支持工具调用（tool calling）。"
-            "请检查 ANTHROPIC_BASE_URL 配置。"
+            "API 端点工具调用（tool calling）检测未通过，"
+            "技能调用可能无法正常工作。请检查 ANTHROPIC_BASE_URL 配置。"
         )
-        logger.critical(msg)
-        # Use a flag file to ensure the Telegram notification is sent at most
-        # once, even if the process manager restarts us with Restart=always.
-        flag = pathlib.Path("/tmp/.tool_check_failed")
-        if not flag.exists():
-            try:
-                await bot.send_message(chat_id=config.owner_id, text=msg)
-                flag.touch()
-            except Exception:
-                logger.exception("Failed to send startup failure notification")
-        await bot.session.close()
-        sys.exit(1)
-    # Clear flag on successful check (e.g. after config is fixed and bot restarts)
-    flag = pathlib.Path("/tmp/.tool_check_failed")
-    if flag.exists():
-        flag.unlink(missing_ok=True)
-    logger.info("Tool calling capability check passed")
+        logger.warning(msg)
+        try:
+            await bot.send_message(chat_id=config.owner_id, text=msg)
+        except Exception:
+            logger.exception("Failed to send tool-check warning notification")
+    else:
+        logger.info("Tool calling capability check passed")
 
     # 4. 注册中间件和路由
     dp.message.middleware(OwnerOnlyMiddleware(config.owner_id))  # 权限过滤
