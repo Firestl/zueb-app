@@ -97,7 +97,7 @@ async def run() -> None:
         logger.critical(msg)
         # Use a flag file to ensure the Telegram notification is sent at most
         # once, even if the process manager restarts us with Restart=always.
-        flag = pathlib.Path(__file__).resolve().parent.parent / ".tool_check_failed"
+        flag = pathlib.Path("/tmp/.tool_check_failed")
         if not flag.exists():
             try:
                 await bot.send_message(chat_id=config.owner_id, text=msg)
@@ -107,7 +107,7 @@ async def run() -> None:
         await bot.session.close()
         sys.exit(1)
     # Clear flag on successful check (e.g. after config is fixed and bot restarts)
-    flag = pathlib.Path(__file__).resolve().parent.parent / ".tool_check_failed"
+    flag = pathlib.Path("/tmp/.tool_check_failed")
     if flag.exists():
         flag.unlink(missing_ok=True)
     logger.info("Tool calling capability check passed")
