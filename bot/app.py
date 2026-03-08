@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import logging
 import os
+import sys
 from typing import Any
 
 from aiogram import BaseMiddleware, Bot, Dispatcher
@@ -15,6 +16,7 @@ from bot.config import load_config
 from bot.handlers import create_chat_router, create_commands_router
 from bot.logging_config import configure_logging
 from bot.scheduler import NightlyAttendanceScheduler
+from bot.startup_check import check_tool_calling
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,22 @@ async def run() -> None:
         retries=config.nightly_check_retries,         # 失败重试次数
         prompt=config.nightly_check_prompt,           # 发送给 Agent 的考勤提示词
     )
+
+    # 3b. Tool calling capability check — fast-fail if the API endpoint is broken
+    logger.info("Running tool calling capability check")
+    if not await check_tool_calling():
+        msg = (
+            "Bot 启动失败：API 端点不支持工具调用（tool calling）。"
+            "请检查 ANTHROPIC_BASE_URL 配置。"
+        )
+        logger.critical(msg)
+        try:
+            await bot.send_message(chat_id=config.owner_id, text=msg)
+        except Exception:
+            logger.exception("Failed to send startup failure notification")
+        await bot.session.close()
+        sys.exit(1)
+    logger.info("Tool calling capability check passed")
 
     # 4. 注册中间件和路由
     dp.message.middleware(OwnerOnlyMiddleware(config.owner_id))  # 权限过滤
