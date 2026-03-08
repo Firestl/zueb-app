@@ -19,12 +19,13 @@ _PROBE_TOOL = {
 }
 
 
-async def check_tool_calling() -> bool:
+async def check_tool_calling(model: str | None = None) -> bool:
     """Return True if the API endpoint correctly handles tool-use requests."""
+    probe_model = model or "claude-haiku-4-5-20251001"
     client = anthropic.AsyncAnthropic()
     try:
         response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=probe_model,
             max_tokens=64,
             tools=[_PROBE_TOOL],
             tool_choice={"type": "any"},

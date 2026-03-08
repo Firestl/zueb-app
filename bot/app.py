@@ -89,7 +89,7 @@ async def run() -> None:
 
     # 3b. Tool calling capability check — fast-fail if the API endpoint is broken
     logger.info("Running tool calling capability check")
-    if not await check_tool_calling():
+    if not await check_tool_calling(model=config.anthropic_model):
         msg = (
             "Bot 启动失败：API 端点不支持工具调用（tool calling）。"
             "请检查 ANTHROPIC_BASE_URL 配置。"
