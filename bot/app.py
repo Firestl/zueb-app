@@ -94,12 +94,17 @@ async def run() -> None:
             "请检查 ANTHROPIC_BASE_URL 配置。"
         )
         logger.critical(msg)
+        notified = False
         try:
             await bot.send_message(chat_id=config.owner_id, text=msg)
+            notified = True
         except Exception:
             logger.exception("Failed to send startup failure notification")
         await bot.session.close()
-        sys.exit(1)
+        # Exit 0 if owner was notified so process managers (Restart=on-failure)
+        # do not restart the bot and send the notification repeatedly.
+        # Exit 1 only if notification failed, allowing one retry.
+        sys.exit(0 if notified else 1)
     logger.info("Tool calling capability check passed")
 
     # 4. 注册中间件和路由
