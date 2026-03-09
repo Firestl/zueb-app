@@ -6,25 +6,20 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 
 from bot.agent.client import AgentManager
+from bot.scheduler.utils import get_retry_delay, next_run_at, parse_time
 
 # Telegram 单条消息上限 4096 字符，预留 ~200 字符余量
 _TELEGRAM_TEXT_LIMIT = 3900
 
 logger = logging.getLogger(__name__)
 _SCHEDULER_SESSION_SCOPE = "telegram-scheduler:nightly-attendance"
-
-
-def _parse_time_of_day(value: str) -> tuple[int, int]:
-    """解析 "HH:MM" 格式的时间字符串，返回 (时, 分)。"""
-    hour_str, minute_str = value.split(":", maxsplit=1)
-    return int(hour_str), int(minute_str)
 
 
 def _split_text(text: str, limit: int = _TELEGRAM_TEXT_LIMIT) -> list[str]:
@@ -68,7 +63,7 @@ class NightlyAttendanceScheduler:
         self._enabled = enabled
         self._run_time = run_time
         # 解析配置的执行时间
-        self._hour, self._minute = _parse_time_of_day(run_time)
+        self._hour, self._minute = parse_time(run_time)
         self._timezone_name = timezone_name
         self._timezone = ZoneInfo(timezone_name)
         self._retries = retries
@@ -108,33 +103,13 @@ class NightlyAttendanceScheduler:
             pass
         logger.info("Nightly attendance scheduler stopped")
 
-    def _next_run_at(self, now: datetime | None = None) -> datetime:
-        """计算下一次执行时间点；若今天已过则推迟到明天同一时刻。"""
-        current = now or datetime.now(self._timezone)
-        target = current.replace(
-            hour=self._hour,
-            minute=self._minute,
-            second=0,
-            microsecond=0,
-        )
-        if target <= current:
-            target += timedelta(days=1)
-        return target
-
-    # 重试间隔（秒）：第1次 60s，第2次 180s，第3次及之后 300s
-    _RETRY_DELAYS = (60, 180, 300)
-
-    def _retry_delay_seconds(self, attempt_index: int) -> int:
-        """根据重试次数返回递增的延迟秒数。"""
-        return self._RETRY_DELAYS[min(attempt_index, len(self._RETRY_DELAYS) - 1)]
-
     async def _run_loop(self) -> None:
         """主循环：计算等待时间 → sleep 到目标时刻 → 执行检查 → 重复。"""
         try:
             while True:
-                now = datetime.now(self._timezone)
-                run_at = self._next_run_at(now)
+                run_at = next_run_at(self._hour, self._minute, self._timezone)
                 # 至少等待 1 秒，防止时间精度导致立即重跑
+                now = datetime.now(self._timezone)
                 sleep_seconds = max((run_at - now).total_seconds(), 1.0)
                 logger.info(
                     "Nightly attendance next run scheduled at %s",
@@ -180,7 +155,7 @@ class NightlyAttendanceScheduler:
                 last_error = exc
                 # 还有剩余重试次数，等待后重试
                 if attempt < self._retries:
-                    delay = self._retry_delay_seconds(attempt)
+                    delay = get_retry_delay(attempt)
                     logger.warning(
                         "Nightly attendance attempt failed, retrying: attempt=%s delay=%ss error=%s",
                         attempt + 1,

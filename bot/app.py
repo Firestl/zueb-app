@@ -14,7 +14,8 @@ from bot.agent.client import AgentManager
 from bot.config import load_config
 from bot.handlers import create_chat_router, create_commands_router
 from bot.logging_config import configure_logging
-from bot.scheduler import NightlyAttendanceScheduler
+from bot.middleware import CancelInterceptMiddleware
+from bot.scheduler import AutoPunchScheduler, CancelGate, NightlyAttendanceScheduler
 from bot.startup_check import check_tool_calling
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,20 @@ async def run() -> None:
         retries=config.nightly_check_retries,         # 失败重试次数
         prompt=config.nightly_check_prompt,           # 发送给 Agent 的考勤提示词
     )
+    # 自动打卡调度器
+    cancel_gate = CancelGate()
+    auto_punch_scheduler = AutoPunchScheduler(
+        bot=bot,
+        cancel_gate=cancel_gate,
+        owner_id=config.owner_id,
+        enabled=config.auto_punch_enabled,
+        timezone_name=config.auto_punch_timezone,
+        morning_notify=config.auto_punch_morning_notify,
+        morning_punch=config.auto_punch_morning_punch,
+        evening_notify=config.auto_punch_evening_notify,
+        evening_punch=config.auto_punch_evening_punch,
+        retries=config.auto_punch_retries,
+    )
 
     # 3b. Tool calling capability check — warn if the API endpoint is broken
     logger.info("Running tool calling capability check")
@@ -102,6 +117,7 @@ async def run() -> None:
 
     # 4. 注册中间件和路由
     dp.message.middleware(OwnerOnlyMiddleware(config.owner_id))  # 权限过滤
+    dp.message.middleware(CancelInterceptMiddleware(cancel_gate)) # 取消拦截（仅 owner 消息）
     dp.include_router(create_commands_router(agent_manager))     # 命令路由（/start 等）
     dp.include_router(create_chat_router(agent_manager))         # 普通聊天路由
 
@@ -111,6 +127,7 @@ async def run() -> None:
         await agent_manager.connect()
         logger.info("Claude agent connected")
         await scheduler.start()
+        await auto_punch_scheduler.start()
 
     dp.startup.register(on_startup)
 
@@ -120,6 +137,7 @@ async def run() -> None:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         logger.info("Shutting down bot runtime")
+        await auto_punch_scheduler.stop()
         await scheduler.stop()
         await agent_manager.disconnect()
         await bot.session.close()
