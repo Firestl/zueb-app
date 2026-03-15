@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 
 import pytest
-from bot.config import load_config
+from bot.config import BotConfig, load_config, log_runtime_config
 
 
 def _env(**overrides: str) -> dict[str, str]:
@@ -74,3 +75,37 @@ def test_load_config_still_requires_notify_before_punch(monkeypatch: pytest.Monk
         match=r"AUTO_PUNCH_MORNING_NOTIFY \(07:55\) must be earlier than AUTO_PUNCH_MORNING_PUNCH \(07:54\)",
     ):
         load_config()
+
+
+def test_log_runtime_config_emits_sanitized_summary(caplog: pytest.LogCaptureFixture) -> None:
+    """测试启动配置摘要日志包含关键开关，但不会泄露敏感字段。"""
+    config = BotConfig(
+        telegram_bot_token="bot-token",
+        anthropic_api_key="api-key",
+        anthropic_base_url=None,
+        anthropic_model=None,
+        bot_log_level="INFO",
+        owner_id=123456,
+        nightly_check_enabled=True,
+        nightly_check_time="22:00",
+        nightly_check_timezone="Asia/Shanghai",
+        nightly_check_retries=2,
+        nightly_check_prompt="查看是否打卡",
+        auto_punch_enabled=False,
+        auto_punch_timezone="Asia/Shanghai",
+        auto_punch_morning_notify="07:52",
+        auto_punch_morning_punch="07:55",
+        auto_punch_evening_notify="17:57",
+        auto_punch_evening_punch="18:00",
+        auto_punch_retries=1,
+    )
+
+    with caplog.at_level(logging.INFO):
+        log_runtime_config(config)
+
+    assert "Runtime config loaded" in caplog.text
+    assert "Nightly check config: enabled=True time=22:00 timezone=Asia/Shanghai retries=2" in caplog.text
+    assert "Auto punch config: enabled=False timezone=Asia/Shanghai morning_notify=07:52 morning_punch=07:55 evening_notify=17:57 evening_punch=18:00 retries=1" in caplog.text
+    assert "Auto punch is disabled by config (AUTO_PUNCH_ENABLED=false)" in caplog.text
+    assert "bot-token" not in caplog.text
+    assert "api-key" not in caplog.text

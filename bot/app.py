@@ -11,7 +11,7 @@ from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.types import Message, TelegramObject
 
 from bot.agent.client import AgentManager
-from bot.config import load_config
+from bot.config import load_config, log_runtime_config
 from bot.handlers import create_chat_router, create_commands_router
 from bot.logging_config import configure_logging
 from bot.middleware import CancelInterceptMiddleware
@@ -57,6 +57,7 @@ async def run() -> None:
     config = load_config()
     configure_logging(config.bot_log_level)
     logger.info("Bot runtime starting")
+    log_runtime_config(config)
 
     # 2. 设置 Claude SDK 所需的环境变量（API Key 和可选的自定义网关地址）
     os.environ["ANTHROPIC_API_KEY"] = config.anthropic_api_key

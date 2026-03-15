@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import os
 import re
 from zoneinfo import ZoneInfo
@@ -14,6 +15,7 @@ load_dotenv()
 
 # 时间格式校验正则：匹配 "HH:MM"
 _TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
+logger = logging.getLogger(__name__)
 
 
 # 不可变配置数据类，保存所有运行时配置项
@@ -212,3 +214,41 @@ def load_config() -> BotConfig:
         auto_punch_evening_punch=auto_punch_evening_punch,
         auto_punch_retries=auto_punch_retries,
     )
+
+
+def log_runtime_config(config: BotConfig) -> None:
+    """输出脱敏后的运行时配置摘要，便于启动时确认关键开关是否生效。"""
+    logger.info(
+        "Runtime config loaded: owner_id=%s bot_log_level=%s anthropic_base_url=%s anthropic_model=%s",
+        config.owner_id,
+        config.bot_log_level,
+        "configured" if config.anthropic_base_url else "default",
+        config.anthropic_model or "sdk-default",
+    )
+    logger.info(
+        "Nightly check config: enabled=%s time=%s timezone=%s retries=%s prompt=%r",
+        config.nightly_check_enabled,
+        config.nightly_check_time,
+        config.nightly_check_timezone,
+        config.nightly_check_retries,
+        config.nightly_check_prompt,
+    )
+    logger.info(
+        "Auto punch config: enabled=%s timezone=%s morning_notify=%s morning_punch=%s evening_notify=%s evening_punch=%s retries=%s",
+        config.auto_punch_enabled,
+        config.auto_punch_timezone,
+        config.auto_punch_morning_notify,
+        config.auto_punch_morning_punch,
+        config.auto_punch_evening_notify,
+        config.auto_punch_evening_punch,
+        config.auto_punch_retries,
+    )
+
+    if not config.nightly_check_enabled:
+        logger.warning(
+            "Nightly attendance check is disabled by config (NIGHTLY_CHECK_ENABLED=false)"
+        )
+    if not config.auto_punch_enabled:
+        logger.warning(
+            "Auto punch is disabled by config (AUTO_PUNCH_ENABLED=false)"
+        )
